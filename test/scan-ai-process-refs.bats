@@ -2,16 +2,12 @@
 # Tests for slop-dictionary.js's scan-ai-process-refs / seed-ai-process-refs
 # commands: catches this toolkit's own process vocabulary (harsh-review,
 # cr-battery, PHR, etc.) leaking into a downstream adopter's PR/commit text,
-# while exempting superpowers-plus's own repo where naming these skills is
-# normal subject matter, not a violation.
+# with occurrence-level subject exceptions reviewed separately.
 
 REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
 SCRIPT="$REPO_ROOT/scripts/slop-dictionary.js"
 
 setup() {
-    # Detection (scan-ai-process-refs) must run OUTSIDE superpowers-plus
-    # itself to observe real matching -- inside this repo the self-repo
-    # exemption correctly and deliberately suppresses every match.
     FAKE_REPO="$(mktemp -d)"
     cd "$FAKE_REPO" || return 1
     git init -q
@@ -48,10 +44,27 @@ teardown() {
     [[ "$output" == *"input is empty"* ]]
 }
 
-@test "scan-ai-process-refs: self-repo exemption fires inside superpowers-plus itself" {
+@test "scan-ai-process-refs: toolkit repository does not exempt narration" {
     run bash -c "cd '$REPO_ROOT' && echo 'a harsh-review pass' | node '$SCRIPT' scan-ai-process-refs -"
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"self-repo exemption"* ]]
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"Review each occurrence"* ]]
+}
+
+@test "scan-ai-process-refs: empty toolkit input remains an error" {
+    run bash -c "cd '$REPO_ROOT' && printf '' | node '$SCRIPT' scan-ai-process-refs -"
+    [ "$status" -eq 2 ]
+}
+
+@test "scan-ai-process-refs: legitimate subject is reported for contextual review" {
+    run bash -c "echo 'feat(code-review-battery): report unresolved findings' | node '$SCRIPT' scan-ai-process-refs -"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"legitimate subject exceptions"* ]]
+}
+
+@test "scan-ai-process-refs: mixed subject and narration cannot bypass scanning" {
+    run bash -c "echo 'Fix code-review-battery totals after harsh-review passed.' | node '$SCRIPT' scan-ai-process-refs -"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"code-review-battery"* && "$output" == *"harsh-review"* ]]
 }
 
 @test "scan-profanity still works after the shared-helper refactor (regression check)" {

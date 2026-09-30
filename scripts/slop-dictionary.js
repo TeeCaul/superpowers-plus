@@ -18,7 +18,6 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
 
 const DICTIONARY_FILE = path.join(process.cwd(), '.slop-dictionary.json');
 const PROFANITY_PATTERNS_FILE = path.join(__dirname, '.profanity-patterns.txt');
@@ -61,53 +60,11 @@ function loadProfanityPatterns() {
   return loadPatternsFromFile(PROFANITY_PATTERNS_FILE, '.profanity-patterns.txt');
 }
 
-/**
- * Load AI-process self-reference patterns (this toolkit's own internal
- * workflow language -- harsh-review, cr-battery, PHR, etc.) that should
- * never appear in PR descriptions or commit messages for a downstream
- * adopter's own product repo, where this vocabulary means nothing to a
- * reviewer. Skipped entirely inside superpowers-plus itself (see
- * isToolkitSelfRepo below), where naming these skills is normal subject
- * matter, not a violation.
- */
+/** Load candidate process references; subject-matter exceptions need review. */
 function loadAiProcessRefPatterns() {
   return loadPatternsFromFile(AI_PROCESS_REFS_PATTERNS_FILE, '.ai-process-refs-patterns.txt');
 }
 
-/**
- * True when the current working directory is inside superpowers-plus
- * itself (or a fork/mirror of it) -- naming these skills (harsh-review,
- * cr-battery, PHR, etc.) is normal subject matter there, not a violation.
- * Checked via the git remote first (fast, works for any real clone), falling
- * back to a content marker in the repo's own AGENTS.md (works for a fork or
- * mirror under a different remote name/path).
- */
-function isToolkitSelfRepo() {
-  try {
-    const remote = execSync('git remote get-url origin', { cwd: process.cwd(), stdio: ['pipe', 'pipe', 'ignore'] })
-      .toString()
-      .trim();
-    if (/[:/]superpowers-plus(\.git)?\/?$/.test(remote)) {
-      return true;
-    }
-  } catch {
-    // No remote, or not a git repo -- fall through to the marker check.
-  }
-
-  try {
-    const toplevel = execSync('git rev-parse --show-toplevel', { cwd: process.cwd(), stdio: ['pipe', 'pipe', 'ignore'] })
-      .toString()
-      .trim();
-    const agentsMd = path.join(toplevel, 'AGENTS.md');
-    if (fs.existsSync(agentsMd) && fs.readFileSync(agentsMd, 'utf8').includes('AI Agent Guidelines - superpowers-plus')) {
-      return true;
-    }
-  } catch {
-    // Not a git repo, or no AGENTS.md at the root.
-  }
-
-  return false;
-}
 
 function loadDictionary() {
   if (!fs.existsSync(DICTIONARY_FILE)) {
@@ -374,7 +331,9 @@ function scanForPatterns(patterns, filePath, label, seedCommand) {
     matches.forEach(m => {
       console.log(`| ${m.line} | "${m.text}" | ${m.context}... |`);
     });
-    console.log('\nAction: Replace flagged terms before commit/publish.');
+    console.log(label === 'AI-PROCESS REFERENCE'
+      ? '\nAction: Review each occurrence under human-comms-hygiene. Rewrite process narration; document legitimate subject exceptions in local review evidence. Unresolved matches block publication.'
+      : '\nAction: Replace flagged terms before commit/publish.');
     process.exit(1);
   } else {
     console.log(`✅ No ${label.toLowerCase()} detected`);
@@ -391,16 +350,10 @@ function scanProfanity(filePath) {
 }
 
 /**
- * Scan a file or stdin (or a PR description written to a temp file) for
- * AI-process self-reference patterns. Returns exit code 1 if found. Skipped
- * (exit 0, with a visible notice) when run inside superpowers-plus itself
- * or a fork/mirror of it, where naming these skills is normal subject matter.
+ * Report lexical candidates in every repository. Exit 1 is not a semantic
+ * verdict: human-comms-hygiene requires review of each subject occurrence.
  */
 function scanAiProcessRefs(filePath) {
-  if (isToolkitSelfRepo()) {
-    console.log('ℹ️  ai-process-reference scan skipped (superpowers-plus self-repo exemption)');
-    process.exit(0);
-  }
   scanForPatterns(loadAiProcessRefPatterns(), filePath, 'AI-PROCESS REFERENCE', 'seed-ai-process-refs');
 }
 

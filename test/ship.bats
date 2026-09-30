@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Unit tests for tools/ship.sh -- exercises the pure sentinel-reading and
+# Unit tests for tools/ship.sh -- exercises the pure description validation and
 # body-generation paths without invoking `gh`, `git push`, or any network.
 # Loaded via SHIP_TESTMODE=1 so main body of ship.sh is skipped.
 
@@ -20,106 +20,106 @@ _source_ship() {
   source "$TOOL"
 }
 
-@test "_read_sentinel: missing file returns empty" {
+@test "generated description starts with the supplied change and observable validation" {
   _source_ship
-  run _read_sentinel "$WORK/.does-not-exist" "abc123"
+  run _generate_body "Retries no longer create duplicate orders." "Retry regression: one order created." ""
   [ "$status" -eq 0 ]
-  [ -z "$output" ]
+  [[ "$output" == "Retries no longer create duplicate orders."* ]]
+  [[ "$output" == *"Retry regression: one order created."* ]]
 }
 
-@test "_read_sentinel: matching PASS line returns score and verdict" {
-  echo "v1|abc123|PASS|2026-04-01T00:00:00Z|min-score=9.2" > "$WORK/.code-review-cleared"
+@test "review metadata never replaces the summary or leaks into the body" {
+  echo "v1|abc123|PASS|2026-04-01|min-score=9.2" > "$WORK/.code-review-cleared"
   _source_ship
-  run _read_sentinel "$WORK/.code-review-cleared" "abc123"
+  run _generate_body "Restore saved drafts after restart." "" "https://github.com/x/y/issues/42"
   [ "$status" -eq 0 ]
-  [[ "$output" =~ ^9\.2\ PASS$ ]]
-}
-
-@test "_read_sentinel: PASS_WITH_NITS accepted" {
-  echo "v1|abc123|PASS_WITH_NITS|2026-04-01T00:00:00Z|min-score=8.5" > "$WORK/.code-review-cleared"
-  _source_ship
-  run _read_sentinel "$WORK/.code-review-cleared" "abc123"
-  [ "$status" -eq 0 ]
-  [[ "$output" =~ ^8\.5\ PASS_WITH_NITS$ ]]
-}
-
-@test "_read_sentinel: FAIL verdict returns empty (do not inject failed evidence)" {
-  echo "v1|abc123|FAIL|2026-04-01T00:00:00Z|min-score=6.0" > "$WORK/.code-review-cleared"
-  _source_ship
-  run _read_sentinel "$WORK/.code-review-cleared" "abc123"
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
-}
-
-@test "_read_sentinel: mismatched SHA returns empty" {
-  echo "v1|abc123|PASS|2026-04-01T00:00:00Z|min-score=9.2" > "$WORK/.code-review-cleared"
-  _source_ship
-  run _read_sentinel "$WORK/.code-review-cleared" "different_sha"
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
-}
-
-@test "_read_sentinel: takes the most-recent matching line when multiple exist" {
-  cat > "$WORK/.code-review-cleared" <<EOF
-v1|abc123|PASS|2026-04-01T00:00:00Z|min-score=7.5
-v1|other|PASS|2026-04-01T00:00:00Z|min-score=8.0
-v1|abc123|PASS|2026-04-01T00:00:00Z|min-score=9.2
-EOF
-  _source_ship
-  run _read_sentinel "$WORK/.code-review-cleared" "abc123"
-  [ "$status" -eq 0 ]
-  [[ "$output" =~ ^9\.2\ PASS$ ]]
-}
-
-@test "_read_sentinel: malformed line (no min-score field) returns empty" {
-  echo "v1|abc123|PASS|2026-04-01T00:00:00Z|" > "$WORK/.code-review-cleared"
-  _source_ship
-  run _read_sentinel "$WORK/.code-review-cleared" "abc123"
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
-}
-
-@test "_generate_body: no sentinels present -> body contains just Summary + Test Plan" {
-  _source_ship
-  run _generate_body "abc123" "ran tools/test-all.sh --fast" ""
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"## Summary"* ]]
-  [[ "$output" == *"## Test Plan"* ]]
-  [[ "$output" == *"ran tools/test-all.sh --fast"* ]]
-  [[ ! "$output" == *"cr-battery evidence"* ]]
-}
-
-@test "_generate_body: cr-battery sentinel -> body contains evidence block" {
-  echo "v1|abc123|PASS|2026-04-01T00:00:00Z|min-score=9.2" > "$WORK/.code-review-cleared"
-  _source_ship
-  run _generate_body "abc123" "smoke tested" ""
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"cr-battery evidence"* ]]
-  [[ "$output" == *"9.2/10"* ]]
-  [[ "$output" == *"PASS"* ]]
-  [[ "$output" == *"abc123"* ]]
-}
-
-@test "_generate_body: ticket URL is inserted at top of Summary" {
-  _source_ship
-  run _generate_body "abc123" "smoke" "https://github.com/x/y/issues/42"
-  [ "$status" -eq 0 ]
+  [[ "$output" == "Restore saved drafts after restart."* ]]
   [[ "$output" == *"https://github.com/x/y/issues/42"* ]]
+  [[ "$output" != *"9.2"* && "$output" != *"PASS"* && "$output" != *"abc123"* ]]
+  [[ "$output" != *"Test plan"* ]]
 }
 
-@test "_generate_body: all three sentinels compose without collision" {
-  echo "v1|abc123|PASS|2026-04-01T00:00:00Z|min-score=9.2" > "$WORK/.code-review-cleared"
-  echo "v1|abc123|PASS|2026-04-01T00:00:00Z|min-score=8.7" > "$WORK/.llm-skill-review-cleared"
-  echo "v1|abc123|PASS_WITH_NITS|2026-04-01T00:00:00Z|min-score=8.0" > "$WORK/.phr-cleared"
+@test "blank summary is rejected" {
   _source_ship
-  run _generate_body "abc123" "smoke" ""
+  run _generate_body "" "" ""
+  [ "$status" -eq 1 ]
+  run _generate_body $' \t\n' "" ""
+  [ "$status" -eq 1 ]
+}
+
+# Exercise the real entrypoint using commands that log any remote mutation.
+_mock_commands() {
+  mkdir -p "$WORK/bin"
+  cat > "$WORK/bin/git" <<'EOF'
+#!/usr/bin/env bash
+case "$1" in
+  config) echo 'bordenet@users.noreply.github.com' ;;
+  rev-parse) echo 'feat/test' ;;
+  push) echo push >> "$REPO_ROOT/operations" ;;
+esac
+EOF
+  cat > "$WORK/bin/gh" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1 $2" == 'pr create' ]]; then
+  echo create >> "$REPO_ROOT/operations"
+  while [[ $# -gt 0 ]]; do
+    if [[ "$1" == '--body-file' ]]; then cp "$2" "$REPO_ROOT/published"; break; fi
+    shift
+  done
+  echo 'https://github.com/example/project/pull/1'
+fi
+EOF
+  chmod +x "$WORK/bin/git" "$WORK/bin/gh"
+}
+
+@test "missing or whitespace summary fails before any push" {
+  _mock_commands
+  run env SHIP_TESTMODE=0 PATH="$WORK/bin:$PATH" bash "$TOOL" --title 'fix: retries' --no-merge
+  [ "$status" -eq 1 ]
+  [ ! -f "$WORK/operations" ]
+  run env SHIP_TESTMODE=0 PATH="$WORK/bin:$PATH" bash "$TOOL" --title 'fix: retries' --summary '   ' --no-merge
+  [ "$status" -eq 1 ]
+  [ ! -f "$WORK/operations" ]
+}
+
+@test "missing option value produces an actionable error" {
+  run env SHIP_TESTMODE=0 bash "$TOOL" --summary
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'--summary requires a value'* ]]
+}
+
+@test "empty and unreadable body files fail before pushing" {
+  _mock_commands
+  printf ' \n' > "$WORK/blank body"
+  run env SHIP_TESTMODE=0 PATH="$WORK/bin:$PATH" bash "$TOOL" --title 'fix: retries' --body-file "$WORK/blank body" --no-merge
+  [ "$status" -eq 1 ]
+  [ ! -f "$WORK/operations" ]
+  run env SHIP_TESTMODE=0 PATH="$WORK/bin:$PATH" bash "$TOOL" --title 'fix: retries' --body-file "$WORK/absent" --no-merge
+  [ "$status" -eq 1 ]
+  [ ! -f "$WORK/operations" ]
+}
+
+@test "caller body survives publication byte for byte including spaces in path" {
+  _mock_commands
+  printf 'Customers retain saved drafts.\n\nValidated restart recovery.\n' > "$WORK/custom body"
+  run env SHIP_TESTMODE=0 PATH="$WORK/bin:$PATH" bash "$TOOL" --title 'fix: drafts' --body-file "$WORK/custom body" --no-merge
   [ "$status" -eq 0 ]
-  [[ "$output" == *"cr-battery evidence"* ]]
-  [[ "$output" == *"llm-skill-review evidence"* ]]
-  [[ "$output" == *"PHR evidence"* ]]
-  [[ "$output" == *"9.2/10"* ]]
-  [[ "$output" == *"8.7/10"* ]]
-  [[ "$output" == *"8.0/10"* ]]
+  cmp "$WORK/custom body" "$WORK/published"
+  [ "$(cat "$WORK/operations")" = $'push\ncreate' ]
+}
+
+@test "generated PR accepts summary alone without invented test results" {
+  _mock_commands
+  run env SHIP_TESTMODE=0 PATH="$WORK/bin:$PATH" bash "$TOOL" --title 'docs: spelling' --summary 'Correct spelling in the installation guide.' --no-merge
+  [ "$status" -eq 0 ]
+  [ "$(cat "$WORK/published")" = 'Correct spelling in the installation guide.' ]
+}
+
+@test "invalid test plan file fails before pushing" {
+  _mock_commands
+  run env SHIP_TESTMODE=0 PATH="$WORK/bin:$PATH" bash "$TOOL" --title 'fix: retries' --summary 'Retries create one order.' --test-plan-file "$WORK/absent" --no-merge
+  [ "$status" -eq 1 ]
+  [ ! -f "$WORK/operations" ]
 }
 
 # --- _aggregate_check_state -------------------------------------------------
