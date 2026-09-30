@@ -10,9 +10,8 @@
 # line break.
 # Lines starting with # are comments.
 #
-# Not scanned against superpowers-plus's own skill/doc files, where
-# naming these skills is the normal subject matter, not a violation --
-# see isToolkitSelfRepo() in slop-dictionary.js.
+# Candidates are scanned in every repo. human-comms-hygiene governs
+# occurrence-level subject exceptions; a repository name grants no exemption.
 
 superpowers-plus
 harsh-review

@@ -73,6 +73,7 @@ static diagram, are authoritative.
 | [**feature-development**](skills/engineering/feature-development/skill.md) | Full lifecycle orchestrator: brainstorm, debate, plan, TDD, review, verify. |
 | [**think-twice**](skills/productivity/think-twice/skill.md) | Detects when the AI is stuck in a loop and dispatches a fresh sub-agent with zero shared context. Auto-triggers on circular reasoning. |
 | [**context-ferry**](skills/productivity/context-ferry/skill.md) | Generates a self-contained resume prompt before context compaction fires. Updates in-progress plan docs, captures pending questions and queued tasks verbatim. Slash command: `/context-ferry`. Auto-fires via PreCompact hook in Claude Code. |
+| [**human-comms-hygiene**](skills/writing/human-comms-hygiene/skill.md) | Helps reviewers and teammates act on commits, PRs, issues, and messages without hunting for the change or ask. |
 | [**detecting-ai-slop**](skills/writing/detecting-ai-slop/skill.md) | Scores text 0-100 for machine-generated patterns across lexical, structural, semantic, and stylometric dimensions. |
 | [**wiki-orchestrator**](skills/wiki/wiki-orchestrator/skill.md) | Pipeline for bulk documentation: de-dup, content, coherence, links, secrets, slop detection, fact-check, publish. |
 | [**evolution-loop**](skills/observability/evolution-loop/skill.md) | Self-improvement cycle: scans failures for recurring patterns, generates skill updates, tracks metrics over time. |
@@ -96,7 +97,7 @@ Then tell your AI assistant what you're doing. The trigger examples are near the
 
 ## What's Included
 
-**123 skills** across 9 domains:
+**124 skills** across 9 domains:
 
 | Domain | Examples |
 |--------|----------|
@@ -239,7 +240,7 @@ After running `install.sh`, confirm skills loaded successfully:
 
 ```bash
 node ~/.codex/superpowers-augment/superpowers-augment.js find-skills
-# Expected: skill catalog printed without errors (superpowers-plus contributes 123 skills)
+# Expected: skill catalog printed without errors (superpowers-plus contributes 124 skills)
 ```
 
 Run the full 30-check diagnostic:
@@ -277,7 +278,7 @@ Skills form pipelines with explicit dependencies. Each pipeline has its own dedi
 | Wiki Pipeline | [Wiki Pipeline](docs/SKILL_TAXONOMY.md#wiki-pipeline) | 7-stage quality chain → publish → post-publish drift check |
 | Debug Flow | [Debug Flow](docs/SKILL_TAXONOMY.md#debug-flow) | debug-conductor → systematic-debugging + 6 internal sub-agents |
 | Code Review Chain | [Code Review Chain](docs/SKILL_TAXONOMY.md#code-review-chain) | requesting → battery → receiving → respond |
-| Full Dependency Graph | [skill-dependency-graph.md](docs/skill-dependency-graph.md) | All 123 skills with typed edges (enables / escalates-to) |
+| Full Dependency Graph | [skill-dependency-graph.md](docs/skill-dependency-graph.md) | Skill relationships with typed edges (enables / escalates-to) |
 
 For how triggers fire, how skill names are resolved, how compression works, and the scoring algorithm behind `match-skills`, see **[docs/DESIGN.md](docs/DESIGN.md)**.
 

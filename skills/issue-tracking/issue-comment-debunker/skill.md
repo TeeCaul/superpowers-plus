@@ -53,6 +53,11 @@ Invoke **BEFORE** any of these actions: adding a comment, status update, or inve
 
 ---
 
+Apply `human-comms-hygiene` when drafting commits, PRs, issues, comments, or
+team messages: lead with the action or material change, keep customer symptoms
+ahead of causes, and preserve evidence and required disclosures. Existing
+verification and publication-authorization requirements still apply.
+
 ## AI Meta-Commentary HARD GATE
 
 <EXTREMELY_IMPORTANT>
