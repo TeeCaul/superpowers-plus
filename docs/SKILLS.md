@@ -2,7 +2,7 @@
 
 Complete list of skills in superpowers-plus. Auto-trigger skills fire based on context; explicit skills are invoked manually.
 
-<!-- SKILL-COUNT: 123 -->
+<!-- SKILL-COUNT: 124 -->
 <!-- Generated from skills/ directory. Update when adding or removing skills. -->
 
 ## Engineering (55)
@@ -96,13 +96,14 @@ Complete list of skills in superpowers-plus. Auto-trigger skills fire based on c
 | `todo-management` | Task capture, tracking, triage, history queries, multi-step plan execution. |
 | `update-superpowers` | Updates superpowers-plus to latest, reruns install cascade, verifies with doctor. |
 
-## Writing (9)
+## Writing (10)
 
 | Skill | Description |
 |-------|-------------|
 | `detecting-ai-slop` | Scores text 0-100 for machine-generated patterns across 4 dimensions. |
 | `eliminating-ai-slop` | Rewrites prose to remove AI patterns. Interactive or automatic mode. |
 | `explain-like-im-five` | Explains a concept, error, or artifact in plain language while preserving nuance. `/eli5 [subject]` — explicit or context-derived. |
+| `human-comms-hygiene` | Leads commits, PRs, issues, comments, and team messages with the action or material change; preserves evidence and required disclosures. |
 | `markdown-table-discipline` | Best practices for table construction. Prevents noise, redundancy, accessibility issues. |
 | `plan-quality-gates` | Prevents fabricated timelines, ensures dependency ordering, requires exit criteria. |
 | `professional-language-audit` | Hard gate scanning for profanity before publishing documentation. |
