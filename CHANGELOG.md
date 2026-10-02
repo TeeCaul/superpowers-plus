@@ -8,6 +8,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **En-dash no longer flagged as AI slop:** `tools/slop-check.sh`, `detecting-ai-slop`, and `eliminating-ai-slop` flag only the em-dash. The en-dash is correct punctuation for ranges and paired terms. A new test asserts en-dash text passes the gate. The commit-msg hook's ASCII normalization of commit messages is unchanged.
+
 ## [5.3.0] - 2026-10-02
 
 ### Added

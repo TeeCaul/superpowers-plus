@@ -9,7 +9,7 @@ This file contains the complete pattern dictionary for slop detection. The core 
 
 ## Lexical Patterns (40 points max)
 
-Each pattern found adds 2 points to lexical score (exception: em-dash and en-dash score +3 pts each; see Category 7).
+Each pattern found adds 2 points to lexical score (exception: each em-dash scores +3 pts; see Category 7).
 
 **One occurrence, one hit.** When one occurrence matches more than one entry because one entry contains the other ("rich tapestry" and `tapestry`, "the journey" and `journey`, "could potentially" and `potentially`, "Of course!" and `of course`), score it once, under the earlier-numbered category. The same holds across dimensions: an occurrence that matches a Lexical entry and a Structural or Semantic row in skill.md ("As mentioned earlier" is Category 6 and Over-Signposting; "stands as a" is Category 2 and Copula Avoidance) scores once, on the Structural or Semantic row. Separate entries that sit next to each other without overlapping ("stands as a testament to" is `stands as a` plus `testament to`) are two tells and score twice. Overlap means the entries match the same words: a row that matches a whole sentence shape (Structural Contrast, Gerund-Tail Commentary, Formulaic Introduction) does not absorb Lexical entries inside that sentence, so "paradigm shift" in "It's not a bug fix; it's a paradigm shift" still scores under Category 10. A row's own trigger word (`underscoring` in Gerund-Tail Commentary, `stands as` in Copula Avoidance) scores only on the row, never also as the Lexical entry it resembles. When a Structural row and a Semantic row fire on the same words, score the Semantic row (a factual defect outranks a style defect) and list both in Top Offenders.
 
@@ -341,11 +341,12 @@ AI-generated text often uses specific punctuation patterns.
 | Pattern | Category | Notes |
 |---------|----------|-------|
 | — (em-dash) | typographic-tell | Replace with comma, semicolon, colon, or parentheses |
-| – (en-dash) | typographic-tell | Same treatment as em-dash; agents substitute it when told to avoid em-dashes. Exempt in ranges ("pp. 3–7", "Mar–Apr") and compound connections between independent nouns ("New York–London flight", "client–server model") |
 | … (ellipsis character) | typographic-tell | Use three periods (...) or rewrite |
 | " " (smart quotes) | typographic-tell | Context-dependent; flag if inconsistent |
 
-**Em-dash and en-dash detection is HIGH PRIORITY.** Each instance adds 3 points (higher weight than standard lexical patterns).
+**Em-dash detection is HIGH PRIORITY.** Each instance adds 3 points (higher weight than standard lexical patterns).
+
+**En-dash (–) is not a tell.** It is correct punctuation for ranges ("pp. 3–7", "2020–2024") and paired terms ("client–server"). Never flag, score, or replace it.
 
 ### Category 8: Vague Abstraction Phrases
 
