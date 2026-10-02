@@ -48,7 +48,7 @@ Options:
 
 ## Example: GVR Loop in Action
 
-**User:** "Write a blog post introduction about database indexing"
+**User (hypothetical):** "Write a blog post introduction about database indexing. Our measured query time fell from 340ms to 12ms after indexing 50M rows across three production systems."
 
 **GVR Iteration 1 (Generate):**
 > "In today's data-driven world, database performance is incredibly important. Let's explore how indexing can significantly improve your query speeds and deliver robust solutions for your applications."
@@ -68,8 +68,10 @@ Options:
 
 **GVR Return:**
 > "Database indexing cut our query time from 340ms to 12ms. Here's what we learned after indexing 50M rows across three production systems."
->
-> [GVR: 2 iterations | removed 5 patterns | σ: 4.2→18.4 | TTR: 0.48→0.62]
+
+Keep iteration counts and style measurements in local review notes, outside
+the returned draft. The numerical claims above came from the supplied example
+facts; never invent measurements during a rewrite.
 
 ---
 

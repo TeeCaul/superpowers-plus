@@ -46,6 +46,11 @@ Before using this skill, configure your issue tracker:
 
 ---
 
+Apply `human-comms-hygiene` when drafting commits, PRs, issues, comments, or
+team messages: lead with the action or material change, keep customer symptoms
+ahead of causes, and preserve evidence and required disclosures. Existing
+verification and publication-authorization requirements still apply.
+
 ## Pre-Creation Checklist (MANDATORY)
 
 Before calling your adapter's `create_issue` operation:

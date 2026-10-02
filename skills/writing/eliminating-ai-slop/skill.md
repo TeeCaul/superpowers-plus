@@ -34,10 +34,17 @@ coordination:
 **Fires for:** All human-readable prose — messaging, email, social/professional, documentation, business writing.
 **Does NOT fire for:** AI-to-AI content (prompts, system instructions, agent config, tool parameters, few-shot examples).
 
+Apply `human-comms-hygiene` when drafting commits, PRs, issues, comments, or
+team messages: lead with the action or material change, keep customer symptoms
+ahead of causes, and preserve evidence and required disclosures. Existing
+verification and publication-authorization requirements still apply.
+
 ## Two Modes
 
 1. **Interactive** — User provides text → show flagged patterns with suggestions → user picks: "Rephrase all", "Keep all", "List them", or "Rephrase 1,3,5"
-2. **Automatic (GVR Loop)** — Generate → Verify (check patterns + stylometrics) → Refine (max 3 iterations). Report: `[GVR: 2 iterations | removed 8 patterns | σ: 7.2→16.4]`
+2. **Automatic (GVR Loop)** — Generate → Verify (check patterns + stylometrics) → Refine (max 3 iterations). Keep iteration counts and style metrics in local review notes; do not append them to the human-facing draft.
+
+For short commits and messages, do not pad prose to satisfy stylometric thresholds; use `human-comms-hygiene` and preserve meaning.
 
 ### GVR Thresholds
 
