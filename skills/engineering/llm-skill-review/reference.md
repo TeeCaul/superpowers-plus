@@ -267,15 +267,12 @@ Two properties are enforced, not conventional:
 
 `--no-envelope` is a declared escape hatch but prints a loud warning and is `PASS`-only; prefer writing a real envelope, and reserve it for when there is genuinely nothing to verify.
 
-**Recording the score in a PR description (recommended convention, not currently CI-enforced in this repo):** paste the score under a specific, consistent markdown heading rather than burying it in prose, for example:
-
-```
-## llm-skill-review evidence
-
-Score: <Prose/Design-mean>/10, <N> rounds, verdict PASS
-```
-
-A dedicated heading stays easy to find for a human reviewer and stays parseable if this repo ever adds automation that reads this section (e.g. a required-status-check that fails a PR missing it); a score present in the body under the wrong heading, or under no heading at all, reads as absent to anything doing exact matching.
+**Human-facing PR descriptions:** apply `human-comms-hygiene`. Lead with the
+problem and resulting behavior, then observable validation and material risks.
+Keep scores and verdicts in the review envelope/check artifacts described
+above, linking them when required or useful. Do not paste a score block as a
+substitute for a summary or test results. Naming a review tool is appropriate
+when that tool is the subject of the change, not as justification for it.
 
 ## Required Output Format
 

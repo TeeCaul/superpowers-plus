@@ -2,20 +2,17 @@
 # tools/ship.sh -- push current branch, open PR, poll checks, merge.
 #
 # Usage:
-#   ship.sh --title "feat(x): do y" \
-#           --test-plan "ran tools/test-all.sh --fast; all pass"
-#   ship.sh --title "..." --base main                # override default 'dev'
-#   ship.sh --title "..." --no-merge                 # push + PR only; skip merge
-#   ship.sh --title "..." --body-file FILE           # use caller body verbatim
+#   ship.sh --title "fix: prevent duplicate orders" \
+#           --summary "Retrying checkout no longer creates a second order." \
+#           --test-plan "Retry test: the same request creates one order."
+#   ship.sh --title "..." --summary "..." --base main
+#   ship.sh --title "..." --summary "..." --no-merge
+#   ship.sh --title "..." --body-file FILE   # complete caller-written body
 #
-# Agent-native evidence flow:
-#   ship.sh reads .code-review-cleared, .llm-skill-review-cleared, and
-#   .phr-cleared for the current HEAD SHA and auto-injects the appropriate
-#   evidence sections into the PR description. No manual copy-paste required.
-#   The evidence lands on the FIRST GitHub Actions run against the PR.
-#
-# Sentinel format (written by run-battery.sh / run-llm-skill-review.sh / run-phr.sh):
-#   v1|<sha>|PASS|<timestamp>|min-score=N.N
+# Generated descriptions require --summary; --test-plan and --ticket are
+# optional. Review evidence stays in existing review artifacts and checks.
+# Supplied body files must be readable and contain non-whitespace text.
+# Input is validated before pushing. Never invent validation to fill a section.
 #
 # Environment:
 #   CLAUDE_HOOKS_BYPASS=1   skip the red-autonomy hook (session-less toolchains,
@@ -37,6 +34,7 @@ else
 # Args
 ###############################################################################
 TITLE=""
+SUMMARY=""
 TARGET_BRANCH="dev"    # feature branches merge into dev, not main
 NO_MERGE=0
 PR_BODY_FILE=""
@@ -46,13 +44,18 @@ TEST_PLAN_FILE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --title)          TITLE="$2";          shift 2 ;;
-    --base|--target-branch)
-                      TARGET_BRANCH="$2";  shift 2 ;;
-    --body-file)      PR_BODY_FILE="$2";   shift 2 ;;
-    --ticket)         TICKET_URL="$2";     shift 2 ;;
-    --test-plan)      TEST_PLAN="$2";      shift 2 ;;
-    --test-plan-file) TEST_PLAN_FILE="$2"; shift 2 ;;
+    --title|--summary|--base|--target-branch|--body-file|--ticket|--test-plan|--test-plan-file)
+      [[ $# -ge 2 && "$2" != --* ]] || { echo "ERROR: $1 requires a value" >&2; exit 1; }
+      case "$1" in
+        --title) TITLE="$2" ;;
+        --summary) SUMMARY="$2" ;;
+        --base|--target-branch) TARGET_BRANCH="$2" ;;
+        --body-file) PR_BODY_FILE="$2" ;;
+        --ticket) TICKET_URL="$2" ;;
+        --test-plan) TEST_PLAN="$2" ;;
+        --test-plan-file) TEST_PLAN_FILE="$2" ;;
+      esac
+      shift 2 ;;
     --no-merge)       NO_MERGE=1;          shift ;;
     -h|--help)
       grep '^#' "$0" | grep -v '^#!/' | sed 's/^# //'
@@ -61,7 +64,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ -n "$TITLE" ]] || { echo "ERROR: --title is required" >&2; exit 1; }
+[[ "$TITLE" =~ [^[:space:]] ]] || { echo "ERROR: --title is required" >&2; exit 1; }
 
 ###############################################################################
 # Identity guard -- personal-repo default; override with SHIP_EXPECTED_EMAIL.
@@ -79,60 +82,17 @@ command -v gh >/dev/null 2>&1 || { echo "ERROR: gh CLI not found on PATH" >&2; e
 fi  # end SHIP_TESTMODE else block
 
 ###############################################################################
-# Sentinel reader
-#
-# Usage: _read_sentinel <file> <head_sha>
-# Prints "SCORE VERDICT" if the most-recent line for HEAD SHA has verdict PASS,
-# prints nothing otherwise.
-###############################################################################
-_read_sentinel() {
-  local file="$1" head_sha="$2"
-  [[ -f "$file" ]] || return 0
-  local line
-  line=$(grep "^v1|${head_sha}|" "$file" | tail -1) || true
-  [[ -n "$line" ]] || return 0
-  local verdict score
-  verdict=$(echo "$line" | cut -d'|' -f3)
-  score=$(echo "$line" | cut -d'|' -f5 | sed 's/min-score=//')
-  [[ "$verdict" == "PASS" || "$verdict" == "PASS_WITH_NITS" ]] || return 0
-  [[ -n "$score" ]] || return 0
-  echo "${score} ${verdict}"
-}
-
-###############################################################################
-# Auto-generate PR body from sentinels
+# Generate the description from caller-provided facts, never review metadata.
 ###############################################################################
 _generate_body() {
-  local head_sha="$1" test_plan_text="$2" ticket="$3"
-  local out=""
-
-  out+="## Summary"$'\n\n'
-  [[ -n "$ticket" ]] && out+="Ticket: ${ticket}"$'\n\n'
-
-  local r s v
-  r=$(_read_sentinel "${REPO_ROOT}/.code-review-cleared" "$head_sha")
-  if [[ -n "$r" ]]; then
-    s=$(echo "$r" | awk '{print $1}'); v=$(echo "$r" | awk '{print $2}')
-    out+="## cr-battery evidence"$'\n\n'"Min-score: ${s}/10 | verdict: ${v} | sha: ${head_sha:0:8}"$'\n\n'
-    echo "[ship] cr-battery evidence: ${s}/10 (${v})" >&2
-  fi
-
-  r=$(_read_sentinel "${REPO_ROOT}/.llm-skill-review-cleared" "$head_sha")
-  if [[ -n "$r" ]]; then
-    s=$(echo "$r" | awk '{print $1}'); v=$(echo "$r" | awk '{print $2}')
-    out+="## llm-skill-review evidence"$'\n\n'"Min-score: ${s}/10 | verdict: ${v} | sha: ${head_sha:0:8}"$'\n\n'
-    echo "[ship] llm-skill-review evidence: ${s}/10 (${v})" >&2
-  fi
-
-  r=$(_read_sentinel "${REPO_ROOT}/.phr-cleared" "$head_sha")
-  if [[ -n "$r" ]]; then
-    s=$(echo "$r" | awk '{print $1}'); v=$(echo "$r" | awk '{print $2}')
-    out+="## PHR evidence"$'\n\n'"Min-score: ${s}/10 | verdict: ${v} | sha: ${head_sha:0:8}"$'\n\n'
-    echo "[ship] PHR evidence: ${s}/10 (${v})" >&2
-  fi
-
-  out+="## Test Plan"$'\n\n'"${test_plan_text}"$'\n'
-  printf '%s' "$out"
+  local summary="$1" test_plan_text="$2" ticket="$3"
+  [[ "$summary" =~ [^[:space:]] ]] || {
+    echo "ERROR: --summary must describe the problem or resulting behavior" >&2
+    return 1
+  }
+  printf '%s\n' "$summary"
+  [[ ! "$ticket" =~ [^[:space:]] ]] || printf '\nRelated: %s\n' "$ticket"
+  [[ ! "$test_plan_text" =~ [^[:space:]] ]] || printf '\n## Test plan\n\n%s\n' "$test_plan_text"
 }
 
 ###############################################################################
@@ -190,7 +150,6 @@ _aggregate_check_state() {
 ###############################################################################
 [[ "${SHIP_TESTMODE:-0}" == "1" ]] && return 0
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
-HEAD_SHA=$(git rev-parse HEAD)
 if [[ "$BRANCH" == "$TARGET_BRANCH" ]]; then
   echo "ERROR: current branch equals target '$TARGET_BRANCH' -- create a feature branch first." >&2
   exit 1
@@ -209,8 +168,6 @@ case "$BRANCH" in
     exit 1
     ;;
 esac
-echo "[ship] pushing $BRANCH -> origin"
-git push --set-upstream origin "$BRANCH"
 
 ###############################################################################
 # Build PR body
@@ -220,17 +177,28 @@ BODY_TMPFILE=$(mktemp -t ship-pr-body.XXXXXX)
 trap "rm -f '$BODY_TMPFILE'" EXIT
 
 if [[ -n "$PR_BODY_FILE" ]]; then
+  [[ -f "$PR_BODY_FILE" && -r "$PR_BODY_FILE" ]] || {
+    echo "ERROR: --body-file must be a readable file" >&2; exit 1;
+  }
+  grep -q '[^[:space:]]' "$PR_BODY_FILE" || {
+    echo "ERROR: --body-file is empty" >&2; exit 1;
+  }
   cp "$PR_BODY_FILE" "$BODY_TMPFILE"
-  echo "[ship] using caller-supplied body: $PR_BODY_FILE" >&2
 else
   if [[ -n "$TEST_PLAN_FILE" ]]; then
+    [[ -f "$TEST_PLAN_FILE" && -r "$TEST_PLAN_FILE" ]] || {
+      echo "ERROR: --test-plan-file must be a readable file" >&2; exit 1;
+    }
     TEST_PLAN="$(cat "$TEST_PLAN_FILE")"
-  elif [[ -z "$TEST_PLAN" ]]; then
-    TEST_PLAN="(no test plan provided -- update this PR description before review)"
+    [[ "$TEST_PLAN" =~ [^[:space:]] ]] || {
+      echo "ERROR: --test-plan-file is empty" >&2; exit 1;
+    }
   fi
-  _generate_body "$HEAD_SHA" "$TEST_PLAN" "$TICKET_URL" > "$BODY_TMPFILE"
-  echo "[ship] auto-generated PR body from sentinel files" >&2
+  _generate_body "$SUMMARY" "$TEST_PLAN" "$TICKET_URL" > "$BODY_TMPFILE"
 fi
+
+echo "[ship] pushing $BRANCH -> origin"
+git push --set-upstream origin "$BRANCH"
 
 ###############################################################################
 # Create PR (use --body-file so a body that starts with '-' is not misparsed

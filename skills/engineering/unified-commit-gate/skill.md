@@ -134,6 +134,11 @@ If sentinel is valid for HEAD and worktree is clean → skip dispatch. Otherwise
 
 ---
 
+Apply `human-comms-hygiene` when drafting commits, PRs, issues, comments, or
+team messages: lead with the action or material change, keep customer symptoms
+ahead of causes, and preserve evidence and required disclosures. Existing
+verification and publication-authorization requirements still apply.
+
 ## Gate 4: Language Audit (user-facing content only)
 
 **Run when staged changes include `.md` files, skill files, README, or wiki content.** Skip for pure code changes.
@@ -153,7 +158,22 @@ printf '%s\n%s\n' "<PR TITLE>" "<PR BODY>" > /tmp/pr-desc.txt
 node ~/.codex/superpowers-plus/scripts/slop-dictionary.js scan-ai-process-refs /tmp/pr-desc.txt
 ```
 
-For `gh pr create --fill` (sources title/body from commit messages, so nothing was explicitly typed to scan beforehand), scan afterward instead: `gh pr view --json title,body --jq '.title + "\n" + .body' | node ~/.codex/superpowers-plus/scripts/slop-dictionary.js scan-ai-process-refs -`. This category is skipped automatically (exit 0, with a visible notice) when run inside `superpowers-plus` itself — see `scripts/.ai-process-refs-patterns.txt`'s header. **HARD GATE for every other repo** — a match blocks the PR the same way a profanity match blocks a commit. New category, watch it for a few real pushes: if a legitimate phrase false-positives (e.g. a product feature genuinely named "harsh review"), add it via `node ~/.codex/superpowers-plus/scripts/slop-dictionary.js except "<phrase>"` rather than disabling the category outright.
+For `gh pr create --fill`, scan the resulting title/body before requesting
+review or merging: `gh pr view --json title,body --jq '.title + "\n" + .body'`
+can supply the text. Prefer an explicitly written description.
+
+The scanner runs in every repository, including this one. Exit 0 means no
+lexical candidates. File-read or pattern-loading errors always block publication,
+even when the exit code is 1. Only a completed scan listing candidate matches
+permits occurrence-by-occurrence review under
+`human-comms-hygiene`; exit 2 means empty input and blocks publication.
+Rewrite process narration. Retain a matched tool/skill name only when that
+occurrence is the actual subject or a relevant product reference; record the
+reason in local review evidence, not in the PR. Do not claim the lexical scan
+passed when it returned matches. A mixed sentence must still lose its process
+justification. No blanket repository or permanent phrase exemptions. Any
+unresolved candidate blocks publication; factual and profanity gates remain.
+
 
 **Gate fails?** Deep-dive: `use-skill professional-language-audit`.
 
