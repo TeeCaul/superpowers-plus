@@ -143,6 +143,13 @@ run_check() {
     [[ "$output" == *"EM_DASH"* ]]
 }
 
+@test "en-dash is legitimate punctuation and never blocks" {
+    printf 'Pages 3\xe2\x80\x937, the 2020\xe2\x80\x932024 window, client\xe2\x80\x93server.\n' > "$CONTENT"
+    run_check --content "$CONTENT"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"EM_DASH"* ]]
+}
+
 @test "booster still blocks" {
     printf 'This change is remarkably fast.\n' > "$CONTENT"
     run_check --content "$CONTENT"

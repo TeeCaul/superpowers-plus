@@ -118,7 +118,7 @@ fi
 
 # -- Check 2: AI slop ----------------------------------------------------------
 # Delegated to slop-check.sh — the centralized pattern gate that covers
-# em/en-dash, boosters, buzzwords, and filler openers. The pattern list lives
+# em-dash, boosters, buzzwords, and filler openers. The pattern list lives
 # there; do not add patterns here.
 if [[ "$SKIP_SLOP" -eq 0 ]]; then
     SLOP_CHECK="$(dirname "${BASH_SOURCE[0]}")/slop-check.sh"
