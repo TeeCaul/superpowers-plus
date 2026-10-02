@@ -46,7 +46,7 @@
 # PATTERN SOURCES:
 #   Primary   — detecting-ai-slop/reference.md: Cat 1 boosters (excl. weak
 #               intensifiers), Cat 2 buzzwords, Cat 3 filler phrases, Cat 7
-#               em/en-dash (Unicode)
+#               em-dash (Unicode; en-dash is legitimate punctuation)
 #   Blocking  — the above, plus a small supplementary set restored from the
 #               retired tools/wiki-content-check.sh SLOP_PATTERNS catalog,
 #               not yet cross-listed in reference.md (see FILLERS comment)
@@ -350,7 +350,9 @@ then
 fi
 
 # ---------------------------------------------------------------------------
-# Cat 7: em-dash / en-dash — Unicode; grep -P is unreliable on macOS, use python3.
+# Cat 7: em-dash only (U+2014). En-dash (U+2013) is legitimate punctuation for
+# ranges and paired terms and is never flagged. Unicode; grep -P is unreliable
+# on macOS, use python3.
 # Non-raw string so \u escapes are processed. f-strings require Python 3.6+;
 # use str.format() for compatibility back to Python 3.0.
 # The python3 call is the if-condition itself (see URL redaction block above
@@ -365,7 +367,7 @@ fi
 # ---------------------------------------------------------------------------
 if ! python3 - "$SCAN_FILE" > "$_PY_TMP" 2>&1 << 'PYEOF'
 import sys, re
-pattern = re.compile("[—–]")
+pattern = re.compile("—")
 with open(sys.argv[1], encoding="utf-8", errors="replace") as fh:
     for i, line in enumerate(fh, 1):
         if pattern.search(line):
@@ -377,7 +379,7 @@ then
     # ("clean") on the highest-signal blocking category -- this branch was
     # missing that wiring.
     category_enabled "EM_DASH" && SKIPPED=$(( SKIPPED + 1 ))
-    printf '[slop-check] ERROR  EM_DASH: python3 failed -- em/en-dash check skipped\n' >&2
+    printf '[slop-check] ERROR  EM_DASH: python3 failed -- em-dash check skipped\n' >&2
     cat "$_PY_TMP" >&2
 else
     while IFS= read -r hit; do

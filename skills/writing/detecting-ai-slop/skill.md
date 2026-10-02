@@ -119,7 +119,7 @@ Verdict: Heavy slop. Substantial rewrite needed.
 
 | Dimension | Max Points | Calculation |
 |-----------|------------|-------------|
-| Lexical | 40 | `min(40, 2*(pattern_count - dash_count) + 3*dash_count)`, where `dash_count` is the number of em-dash/en-dash instances (each worth +3 instead of +2; see reference.md typographic-tells section) and `pattern_count` includes those dash instances |
+| Lexical | 40 | `min(40, 2*(pattern_count - dash_count) + 3*dash_count)`, where `dash_count` is the number of em-dash instances (en-dashes are legitimate punctuation and never count) (each worth +3 instead of +2; see reference.md typographic-tells section) and `pattern_count` includes those dash instances |
 | Structural | 25 | `min(25, 5 * structural_pattern_instances + sum(style_tell_weights))` — count each matched instance of a row marked Structural in the Structural & Semantic Patterns table (5 pts per instance, not per pattern type); style-level tells (random bolding, one-sentence paragraphs, etc.) use variable weights from `reference.md` |
 | Semantic | 20 | `min(20, 5 * semantic_pattern_instances)` — count each matched instance of a row marked Semantic in the Structural & Semantic Patterns table (5 pts per instance, not per pattern type); each instance scores once, on its stated dimension only |
 | Stylometric | 15 | `min(15, 5 * stylometric_flags)` |
@@ -187,7 +187,7 @@ For the complete pattern dictionary, see [reference.md](./reference.md). **Dimen
 | Vague Abstraction | the frame, the lens, the narrative, the space | Lexical | Replace with the specific noun |
 | Structural Contrasts | "It's not X; it's Y", "[Subject] isn't X; it's Y", "not just X — it's Y", "not merely X — it's Y" | Structural | State Y directly; drop the negation frame |
 | Style Tells | one-sentence paragraphs, random bolding, abstract noun stacking | Structural | Restructure |
-| Typographic Tells | em-dash (—), en-dash, smart quotes | Lexical | Replace with standard punctuation (em-dash and en-dash score +3 pts each, not +2) |
+| Typographic Tells | em-dash (—), smart quotes | Lexical | Replace with standard punctuation (each em-dash scores +3 pts, not +2). En-dash (–) is legitimate punctuation and is never flagged |
 | Clichés | state of the art, at the end of the day, paradigm shift, move the needle, think outside the box (see reference.md Cat. 10 for full list) | Lexical | Replace with the specific claim. Score once per instance; if a phrase also matches a pattern in another Lexical category (e.g. "at the end of the day" also matching Filler Phrases Cat. 3, or "state of the art" also matching Buzzwords Cat. 2), the earlier-numbered category takes precedence, do not double-count. |
 | AI Jargon | failure mode, failure class, failure pattern, failure category, error class, defect pattern (singular and plural; full list and exemptions in reference.md Cat. 11) in free-running prose | Lexical | Flag at 2 pts per instance. See reference.md Cat. 11 for full exemption rules; do not flag structural section contracts, external quotations, code/API contexts, or a concrete singular use that names how the system fails (a process lapse does not count). Default replacement: name the actual problem. Full replacement guidance in eliminating-ai-slop. |
 | Semantic Fabrication | framework name-dropping, fabricated open questions, process metrics as results, verification theater | Semantic | Ground in a source or delete |

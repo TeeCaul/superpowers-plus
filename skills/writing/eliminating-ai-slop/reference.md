@@ -74,13 +74,13 @@ Apply in order, stop at first match:
 
 ### Typographic Patterns (replace punctuation)
 
-**Em-dash (—) and en-dash (–) - HIGH PRIORITY:**
+**Em-dash (—) - HIGH PRIORITY:**
 
 - Parenthetical → parentheses: "the project (started in 2024) succeeded"
 - Contrast → semicolon: "it worked; the maintenance burden compounded"
 - List intro → colon: "three things: speed, quality, cost"
 - Simple pause → comma: "it worked, but barely"
-- En-dash gets the same treatment as em-dash; it is the substitution agents reach for when told to avoid em-dashes. Keep it in ranges ("pp. 3–7", "Mar–Apr") and compound connections between independent nouns ("New York–London flight", "client–server model").
+- Do not touch en-dashes (–). They are legitimate punctuation for ranges ("pp. 3–7", "2020–2024") and paired terms ("client–server"), and must never be replaced.
 
 ---
 
