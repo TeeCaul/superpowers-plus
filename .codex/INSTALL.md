@@ -1,12 +1,12 @@
 # Installing Superpowers Plus for Codex
 
-58 domain skills for wiki editing, issue tracking, security audits, and more. Extends [obra/superpowers](https://github.com/obra/superpowers) (14 core workflow skills).
+124 skills for engineering workflows, code review, wiki editing, issue tracking, security audits, and more. Extends [obra/superpowers](https://github.com/obra/superpowers); all 14 of its core workflow skills are bundled.
 
 ## Prerequisites
 
-- **bash 4+** — macOS ships bash 3.2; run `brew install bash` first
-- **git** — macOS: `xcode-select --install`
-- **Node.js 18+** — macOS: `brew install node`
+- **bash 4+**: macOS ships bash 3.2; run `brew install bash` first
+- **git**: macOS: `xcode-select --install`
+- **Node.js 18+**: macOS: `brew install node`
 
 The installer detects missing prerequisites and tells you exactly how to fix them.
 
@@ -20,7 +20,7 @@ bash install.sh
 
 The installer automatically:
 
-- Installs obra/superpowers if missing
+- Includes the 14 bundled obra/superpowers skills (no separate install)
 - Deploys skills to `~/.codex/skills/` and `~/.claude/skills/`
 - Sets up the bootstrap script and agent configuration
 - Auto-fixes CRLF line endings on Windows/WSL
@@ -31,7 +31,7 @@ The installer automatically:
 
 ```bash
 node ~/.codex/superpowers-augment/superpowers-augment.js find-skills
-# Expected: ~72 skills (58 superpowers-plus + 14 obra/superpowers)
+# Expected: the 124 superpowers-plus skills (14 bundled from obra/superpowers), plus any others installed
 ```
 
 ## Updating
@@ -49,17 +49,17 @@ bash install.sh --uninstall
 
 ## What You Get
 
-**From obra/superpowers (installed automatically):**
+**From obra/superpowers (bundled):**
 
 - brainstorming, writing-plans, executing-plans
 - test-driven-development, systematic-debugging
 - subagent-driven-development, using-git-worktrees
 - 14 core workflow skills
 
-**From superpowers-plus (58 skills):**
+**Added by superpowers-plus:**
 
 - Wiki editing and verification skills
-- Issue tracking patterns (Linear, GitHub, Jira)
+- Issue tracking patterns (GitHub and Jira adapters, plus a template for others)
 - Security audit skills (secret detection, IP audit)
 - Engineering skills (pre-commit gates, blast radius)
 - Observability and research skills
