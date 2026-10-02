@@ -63,3 +63,45 @@ setup() {
     [[ "$(cat "$expected")" == *"commit2"* ]]
     [[ "$(cat "$expected")" == *"+two"* ]]
 }
+
+@test "review-package: empty range is rejected without creating an output" {
+    run bash "$SCRIPT" plan.md HEAD HEAD output.diff
+    [ "$status" -eq 3 ]
+    [[ "$output" == *"empty commit range"* ]]
+    [ ! -e output.diff ]
+}
+
+@test "review-package: divergent head is rejected without overwriting output" {
+    git checkout -qb other
+    echo other > other.txt; git add other.txt; git commit -qm other
+    other=$(git rev-parse HEAD)
+    git checkout -q main
+    echo main > main.txt; git add main.txt; git commit -qm main
+    echo preserve > output.diff
+    run bash "$SCRIPT" plan.md HEAD "$other" output.diff
+    [ "$status" -eq 3 ]
+    [[ "$output" == *"not a descendant"* ]]
+    [ "$(cat output.diff)" = preserve ]
+}
+
+@test "review-package: bundled helpers run without executable bits" {
+    helpers="$BATS_TEST_TMPDIR/helpers"
+    mkdir -p "$helpers"
+    cp "$(dirname "$SCRIPT")/review-package" "$(dirname "$SCRIPT")/sdd-workspace" "$helpers/"
+    chmod -x "$helpers/"*
+    echo changed > f.txt; git add f.txt; git commit -qm change
+    run bash "$helpers/review-package" plan.md HEAD~1 HEAD
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"1 commit(s)"* ]]
+}
+
+@test "task-brief: bundled workspace helper runs without executable bits" {
+    helpers="$BATS_TEST_TMPDIR/helpers"
+    mkdir -p "$helpers"
+    cp "$(dirname "$SCRIPT")/task-brief" "$(dirname "$SCRIPT")/sdd-workspace" "$helpers/"
+    chmod -x "$helpers/"*
+    printf '### Task 1: Example\n\nDo the thing.\n' > plan.md
+    run bash "$helpers/task-brief" plan.md 1
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"task-1-brief.md"* ]]
+}

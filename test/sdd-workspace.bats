@@ -55,24 +55,19 @@ setup() {
     [ -d "$SANDBOX/.superpowers/sdd/my-plan" ]
 }
 
-@test "sdd-workspace: same-basename plans in different dirs collide onto the same slug dir (accepted, matches upstream)" {
-    # This is documented, accepted behavior -- not a bug to fix. If a future
-    # change disambiguates by directory, this test should be updated
-    # deliberately, not silently broken.
+@test "sdd-workspace: same-basename plans have separate stable owned workspaces" {
     mkdir -p dir-a dir-b
     echo "a" > dir-a/plan.md
     echo "b" > dir-b/plan.md
-
     run bash "$SCRIPT" dir-a/plan.md
-    [ "$status" -eq 0 ]
-    out_a="$output"
-
+    [ "$status" -eq 0 ]; out_a="$output"
     run bash "$SCRIPT" dir-b/plan.md
-    [ "$status" -eq 0 ]
-    out_b="$output"
-
-    [ "$out_a" = "$out_b" ]
-    [ "$out_a" = "$SANDBOX/.superpowers/sdd/plan" ]
+    [ "$status" -eq 0 ]; out_b="$output"
+    [ "$out_a" != "$out_b" ]
+    [ "$(cat "$out_a/plan-path")" = "dir-a/plan.md" ]
+    [ "$(cat "$out_b/plan-path")" = "dir-b/plan.md" ]
+    run bash "$SCRIPT" "$SANDBOX/dir-b/../dir-b/plan.md"
+    [ "$status" -eq 0 ]; [ "$output" = "$out_b" ]
 }
 
 @test "sdd-workspace: .gitignore (content '*') lands at .superpowers/sdd/.gitignore, not inside the per-plan dir" {
@@ -85,4 +80,72 @@ setup() {
     [ -f "$SANDBOX/.superpowers/sdd/.gitignore" ]
     [ "$(cat "$SANDBOX/.superpowers/sdd/.gitignore")" = "*" ]
     [ ! -f "$SANDBOX/.superpowers/sdd/my-plan/.gitignore" ]
+}
+
+@test "sdd-workspace: preserves an existing shared ignore policy" {
+    echo "# plan" > plan.md
+    mkdir -p .superpowers/sdd
+    printf '*\n!progress.md\n' > .superpowers/sdd/.gitignore
+    cp .superpowers/sdd/.gitignore expected-ignore
+    run bash "$SCRIPT" plan.md
+    [ "$status" -eq 0 ]
+    cmp expected-ignore .superpowers/sdd/.gitignore
+}
+
+@test "sdd-workspace: disambiguates repeated parent names without overwriting artifacts" {
+    mkdir -p one/shared two/shared three/shared
+    for parent in one two three; do
+        echo "# plan" > "$parent/shared/plan.md"
+        run bash "$SCRIPT" "$parent/shared/plan.md"
+        [ "$status" -eq 0 ]
+        printf '%s\n' "$parent" > "$output/artifact"
+    done
+    run bash "$SCRIPT" one/shared/plan.md
+    [ "$(cat "$output/artifact")" = one ]
+    run bash "$SCRIPT" two/shared/plan.md
+    [ "$(cat "$output/artifact")" = two ]
+    run bash "$SCRIPT" three/shared/plan.md
+    [ "$(cat "$output/artifact")" = three ]
+}
+
+@test "sdd-workspace: blocked parent fails promptly rather than looping on collisions" {
+    echo "# plan" > plan.md
+    touch .superpowers
+    run timeout 2 bash "$SCRIPT" plan.md
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"cannot create workspace"* ]]
+}
+
+@test "sdd-workspace: simultaneous colliding plans cannot claim one workspace" {
+    mkdir -p a b
+    for n in $(seq 1 12); do
+        echo "# a" > "a/plan-$n.md"
+        echo "# b" > "b/plan-$n.md"
+        bash "$SCRIPT" "a/plan-$n.md" > first & first=$!
+        bash "$SCRIPT" "b/plan-$n.md" > second & second=$!
+        wait "$first"; wait "$second"
+        [ "$(cat first)" != "$(cat second)" ]
+        [ "$(cat "$(cat first)/plan-path")" = "a/plan-$n.md" ]
+        [ "$(cat "$(cat second)/plan-path")" = "b/plan-$n.md" ]
+    done
+}
+
+@test "sdd-workspace: concurrent callers for one plan all resolve successfully" {
+    echo "# plan" > plan.md
+    pids=()
+    for n in $(seq 1 12); do
+        bash "$SCRIPT" plan.md > "out-$n" & pids+=("$!")
+    done
+    for pid in "${pids[@]}"; do wait "$pid"; done
+    for n in $(seq 2 12); do cmp out-1 "out-$n"; done
+    [ "$(cat "$(cat out-1)/plan-path")" = plan.md ]
+}
+
+@test "sdd-workspace: stale lock fails with a recovery message within a bounded wait" {
+    echo "# plan" > plan.md
+    mkdir -p .superpowers/sdd/.workspace-lock
+    run timeout 8 bash "$SCRIPT" plan.md
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"workspace lock busy"* ]]
+    [ -d .superpowers/sdd/.workspace-lock ]
 }

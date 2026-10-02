@@ -4,7 +4,7 @@ disable-model-invocation: true
 source: superpowers-plus
 triggers: ["execute this plan", "implement the plan", "execute plan file", "carry out this plan", "run the plan"]
 anti_triggers: ["write a plan", "create a plan", "plan this out"]
-description: Use when you have a written implementation plan to execute in a separate session with review checkpoints
+description: Use when executing an approved written plan natively in the current session with required verification and review
 summary: "Use when: executing a written implementation plan. Reviews and executes all tasks."
 coordination:
   group: engineering
@@ -28,20 +28,18 @@ Load plan, review critically, execute all tasks, report when complete.
 
 **Announce at start:** "I'm using the executing-plans skill to implement this plan."
 
-**Note:** Tell your human partner that Superpowers works much better with access to subagents. The quality of its work will be significantly higher if run on a platform with subagent support (such as Augment Code, Claude Code, or Codex). If subagents are available, use superpowers:subagent-driven-development instead of this skill.
-
 ## When to Use
 
-- You have a written implementation plan (e.g. from writing-plans skill) and are ready to execute it step by step
-- You lack subagent support and must execute tasks sequentially in one session
-- You need structured checkpoints and review gates between phases
-
-**NOT when:** subagents are available — use subagent-driven-development instead for better quality and parallelism.
+Use for native execution of a written, approved plan in this session, whether
+or not subagents are available. Preserve the user's execution choice. Native
+execution avoids fresh implementer contexts per task; subagent-driven development
+provides independent review between tasks. Neither bypasses repository gates.
 
 ## The Process
 
 ### Step 1: Load and Review Plan
-1. Read plan file
+1. Read the saved plan and its linked spec; confirm execution is authorized for
+   that plan. Approval of an unseen scope is not approval of an unseen plan.
 2. Review critically - identify any questions or concerns about the plan
 3. If concerns: Raise them with your human partner before starting
 4. If no concerns: Create TodoWrite and proceed
@@ -52,7 +50,8 @@ For each task:
 1. Mark as in_progress
 2. **Before any `git commit` in this step:** invoke `superpowers:unified-commit-gate` (all applicable gates). Do NOT skip because you are mid-plan. Then continue with the plan's steps exactly as written (plan has bite-sized steps).
 3. Run verifications as specified
-4. Mark as completed
+4. Mark the plan's completed step checkboxes only after their checks pass;
+   record failures and deviations. Mark the task completed after verification.
 
 ### Step 3: Complete Development
 

@@ -2,7 +2,7 @@
 
 Use this template when dispatching an implementer subagent.
 
-**Before dispatching:** run `scripts/task-brief PLAN_FILE N` to extract the task text
+**Before dispatching:** run `bash scripts/task-brief PLAN_FILE N` to extract the task text
 to a file. Pass the printed path as `[BRIEF_FILE]` — do not paste task text inline.
 Record the current HEAD as `[BASE_SHA]` before dispatch.
 
@@ -153,6 +153,6 @@ Subagent (general-purpose):
 
 **Placeholders:**
 - `[MODEL]` — REQUIRED: implementer model per SKILL.md Model Selection
-- `[BRIEF_FILE]` — path from `scripts/task-brief PLAN_FILE N`
+- `[BRIEF_FILE]` — path from `bash scripts/task-brief PLAN_FILE N`
 - `[REPORT_FILE]` — name as `task-N-report.md` alongside the brief; the implementer
   writes the full report here, controller reads it before dispatching the reviewer

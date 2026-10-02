@@ -112,7 +112,7 @@ Subagent (general-purpose):
   without it
 - `[FIX_BASE_SHA]` — the head the previous review saw
 - `[HEAD_SHA]` — current commit
-- `[DIFF_FILE]` — REQUIRED: the path `scripts/review-package PLAN_FILE
+- `[DIFF_FILE]` — REQUIRED: the path `bash scripts/review-package PLAN_FILE
   FIX_BASE HEAD` printed — the re-reviewer has no diff to inspect without it
 
 **Re-reviewer returns:** per-finding verdicts (ADDRESSED / NOT ADDRESSED),

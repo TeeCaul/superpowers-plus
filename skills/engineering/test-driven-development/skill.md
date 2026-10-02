@@ -93,7 +93,11 @@ Write simplest code to pass. Don't add features, refactor, or "improve" beyond t
 
 ### Verify GREEN (MANDATORY)
 
-Run test. Confirm it passes. Other tests still pass. Output pristine.
+Run the focused test, then the project's documented test command. GREEN means
+the project suite passes, not only the task's named file. Report every failing
+test by name, including pre-existing failures; distinguish them from regressions.
+Resolve failures or record a scoped exception authorized by the user. Output must
+be understood before declaring success.
 
 ### REFACTOR — Clean Up
 
