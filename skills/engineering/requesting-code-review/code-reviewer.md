@@ -69,6 +69,15 @@ yourself and say so in your report.
 - Documentation complete?
 - No obvious bugs?
 
+## Inputs the Spec Does Not Name
+
+Judge behavior on plausible inputs and environments by what a reasonable
+user would expect; spec silence does not excuse a crash or data loss. Grade
+by its effect on the user, while staying within the changed task's scope.
+Before the verdict, list behavior you considered but declined to judge, with
+a reason for each (or "None"). The controller must rule on each item or carry
+it as an explicit unresolved limitation; do not silently drop it.
+
 ## Output Format
 
 ### Strengths
