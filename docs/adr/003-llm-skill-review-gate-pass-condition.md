@@ -4,7 +4,7 @@
 **Date:** 2026-08-15  
 **Accepted:** 2026-08-15 (human: "Accept and proceed")  
 **Decision Makers:** @bordenet  
-**Related:** [#1187](https://github.com/bordenet/superpowers-plus/issues/1187), workstream WS6 in `TODO.md`
+**Related:** [#1187](https://github.com/bordenet/superpowers-plus/issues/1187), workstream WS6 in `docs/maintainers/TODO.md`
 
 ## Context
 

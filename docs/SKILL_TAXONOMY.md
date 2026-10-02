@@ -9,7 +9,7 @@ Visual reference for the skill hierarchy of superpowers-plus: orchestration chai
 > - **[OVERRIDE]**: superpowers-plus replaces this upstream obra/superpowers skill with a stricter, hardened version
 > - **[BASE]**: installed from obra/superpowers unchanged; superpowers-plus adds nothing to it
 > - All other nodes are net-new skills that exist only in superpowers-plus
-> - Solid arrows below reproduce a skill's own `coordination.enables` / `requires` frontmatter field exactly, verified against the source file. Dotted arrows mark a real relationship documented in a skill's prose that isn't (yet) encoded in its frontmatter. The machine-generated, always-current version of every coordination edge — all 123 skills — lives at [skill-dependency-graph.md](skill-dependency-graph.md), one small diagram per `coordination.group` plus a table of edges that cross group boundaries. This document is the hand-curated subset covering just the handful of pipelines worth walking through in prose.
+> - Solid arrows below reproduce a skill's own `coordination.enables` / `requires` frontmatter field exactly, verified against the source file. Dotted arrows mark a real relationship documented in a skill's prose that isn't (yet) encoded in its frontmatter. The machine-generated, always-current version of every coordination edge, covering all 124 skills, lives at [skill-dependency-graph.md](skill-dependency-graph.md), one small diagram per `coordination.group` plus a table of edges that cross group boundaries. This document is the hand-curated subset covering just the handful of pipelines worth walking through in prose.
 
 ---
 
@@ -21,9 +21,9 @@ superpowers-plus installs on top of [obra/superpowers](https://github.com/obra/s
 |-------|---------|
 | **superpowers-plus overrides** | 9 skills that replace an upstream obra/superpowers skill of the same name with additional enforcement gates |
 | **superpowers-plus base (unchanged)** | 5 skills (`dispatching-parallel-agents`, `executing-plans`, `using-git-worktrees`, `using-superpowers`, `writing-plans`) added from obra/superpowers at the v2.6.0 fold-in, unchanged |
-| **superpowers-plus additions** | 109 net-new skills covering engineering, wiki, security, research, and more |
+| **superpowers-plus additions** | 110 net-new skills covering engineering, wiki, security, research, and more |
 
-123 skills total. Count verified against `find skills -name skill.md | wc -l`; per-domain breakdown in [Domain Reference](#domain-reference) below.
+124 skills total. Count verified against `find skills -name skill.md | wc -l`; per-domain breakdown in [Domain Reference](#domain-reference) below.
 
 ---
 
@@ -290,7 +290,7 @@ The loop is continuous: Sensor → Actuator → Regulator → back to Sensor, ev
 
 ## Domain Reference
 
-All 123 skills grouped by filesystem domain, verified against `skills/*/*/skill.md` directly. **[OVERRIDE]** replaces an upstream obra/superpowers skill; **[BASE]** is installed from obra/superpowers unchanged; **†** marks debug-conductor internal sub-agents (not invoked directly); all others are net-new superpowers-plus additions. Full one-line descriptions for every skill: [SKILLS.md](SKILLS.md).
+All 124 skills grouped by filesystem domain, verified against `skills/*/*/skill.md` directly. **[OVERRIDE]** replaces an upstream obra/superpowers skill; **[BASE]** is installed from obra/superpowers unchanged; **†** marks debug-conductor internal sub-agents (not invoked directly); all others are net-new superpowers-plus additions. Full one-line descriptions for every skill: [SKILLS.md](SKILLS.md).
 
 | Domain | Count | Skills |
 |--------|-------|--------|
@@ -302,11 +302,11 @@ All 123 skills grouped by filesystem domain, verified against `skills/*/*/skill.
 | **research** | 3 | expert-interviewer, incorporating-research, perplexity-research |
 | **security** | 5 | devsec-audit, public-repo-ip-audit, repo-security-scan, security-upgrade, wiki-instruction-guard |
 | **wiki** | 9 | link-verification, wiki-content-coherence, wiki-debunker, wiki-markdown-structure-gate, wiki-orchestrator, wiki-prune-audit, wiki-refactor, wiki-secret-audit, wiki-verify |
-| **writing** | 9 | detecting-ai-slop, eliminating-ai-slop, explain-like-im-five, markdown-table-discipline, plan-quality-gates, professional-language-audit, readme-authoring, writing-plans **[BASE]**, writing-skills **[OVERRIDE]** |
+| **writing** | 10 | detecting-ai-slop, eliminating-ai-slop, explain-like-im-five, human-comms-hygiene, markdown-table-discipline, plan-quality-gates, professional-language-audit, readme-authoring, writing-plans **[BASE]**, writing-skills **[OVERRIDE]** |
 
 ---
 
-*123 skills across 9 domains (9 overrides, 5 base, 109 net-new). Counts verified against the filesystem, not carried forward from an earlier snapshot.*
+*124 skills across 9 domains (9 overrides, 5 base, 110 net-new). Counts verified against the filesystem, not carried forward from an earlier snapshot.*
 
 *What's machine-regenerated vs. hand-curated, so the next update touches the right file:*
 

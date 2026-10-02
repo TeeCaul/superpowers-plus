@@ -8,6 +8,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [5.3.0] - 2026-10-02
+
 ### Added
 
 - **`writing-good-tests.md` (TDD skill):** new reference replacing `testing-anti-patterns.md`. Ported from obra/superpowers v6.2 with full string-presence-trap and change-detector-trap falsifiability guidance, plus 3 concrete counter-examples (string presence, change-detector, too-coupled).
@@ -21,6 +23,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **README:** leads with the problem and the enforcement model, adds measured AI-Harness results, and states platform support for each documented install path. Install, configuration, and troubleshooting moved to `docs/INSTALLATION.md`; the tools table and quality-gate policy moved to `docs/TOOLS.md`.
+- **Skill counts:** Codex and OpenCode install guides, the Cursor manifest, and the Claude plugin manifests now report 124 skills. The Codex and OpenCode guides describe obra/superpowers as bundled rather than separately installed.
+- **Repo `TODO.md`** moved to `docs/maintainers/TODO.md`.
+- **Gemini CLI** install instructions removed: there is no Gemini extension manifest, and the documented command installed a fork dropped in v2.6.0.
+- **Cursor manifest** version synced from 2.5.2 to 5.3.0.
+- **Security checklist for overlays** moved from the README into `docs/ENTERPRISE_ADOPTERS_GUIDE.md`; the data-egress note for API keys moved into `docs/INSTALLATION.md`.
+- **`docs/SKILL_TAXONOMY.md`** lists `human-comms-hygiene` and counts 124 skills; `UPGRADING.md` count updated. New tests pin the skill count across these files and the changelog heading format that release notes depend on.
+- **CHANGELOG:** the 2.6.0 heading now uses the bracketed format, so release notes for a version stop at the next version heading.
 - **SDD skill (`subagent-driven-development/skill.md`):** ported from obra/superpowers v6.2 -- plan-scoped workspace support (PLAN_FILE-first arg), resume-based fix loop with ledger-identity-check step, and 5-round review-loop circuit breaker to prevent infinite reviewer disagreements.
 - **SDD skill (`subagent-driven-development/skill.md`), "rulings, not stalls":** ported from obra/superpowers v6.3.0 -- a running plan no longer stalls on the human for plan conflicts, plan-mandated review findings, or load-bearing adjudications at the fix-loop cap; the controller rules on them itself (spec is the binding authority, the plan is its argument), records every decision in the ledger as `Ruling: <what> — <why> — <cost if wrong>`, and surfaces the exhaustive "Rulings I made" list before the workspace is deleted. Only four things still stop execution to ask: an irreversible/destructive operation, a security-sensitive action, an out-of-worktree side effect norms require consent for (merge, push to a shared branch, publish), or a plan where every path forward is a guess. Also adds: pre-flight conflict scan now produces a pairwise conflict table (not a batched question), batching guidance for same-shape small tasks, and bounded-wait guidance for idle periods between subagent dispatches. Reduces routine human checkpoints to four narrow safety-consent stops, consistent with `CLAUDE.md`'s distinction between quality-gate ceremony (eliminated) and irreversible or consent-requiring actions (preserved).
 - **SDD scripts (`scripts/review-package`, `scripts/sdd-workspace`, `scripts/task-brief`):** updated for PLAN_FILE-first arg and plan-scoped workspace.
@@ -103,7 +113,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   returns not-found instead of an arbitrary unrelated skill; a malformed `top_n` falls
   back to the default; an oversized `query` is rejected.
 
-## v2.6.0 (2026-05-15)
+## [2.6.0] - 2026-05-15
 
 ### Breaking Changes
 

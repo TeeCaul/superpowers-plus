@@ -1,8 +1,8 @@
 {
   "name": "superpowers-plus",
   "displayName": "Superpowers Plus",
-  "description": "58 skills for wiki editing, issue tracking, security audits, AI slop detection. Requires obra/superpowers.",
-  "version": "2.5.2",
+  "description": "124 skills for AI coding assistants: engineering gates, code review, wiki, issue tracking, security audits, AI slop detection. Extends obra/superpowers.",
+  "version": "5.3.0",
   "author": {
     "name": "Matt Bordenet",
     "email": "bordenet@users.noreply.github.com"
