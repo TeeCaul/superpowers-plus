@@ -1,12 +1,22 @@
 #!/usr/bin/env bash
 # Resolve and ensure the working-tree directory SDD uses for one plan's
 # short-lived artifacts: task briefs, implementer reports, review packages,
-# and the progress ledger. Print the plan's directory absolute path.
+# and the progress ledger. Print the plan directory's absolute path.
 #
-# The workspace is plan-scoped (.superpowers/sdd/<plan-basename>/) so a
-# follow-up plan in the same working tree can never read or overwrite
-# another plan's artifacts — a stale ledger misread as current progress
-# used to make controllers skip whole task sequences.
+# One directory per plan (.superpowers/sdd/<plan-basename>/) so a follow-up
+# plan in the same working tree can never read or overwrite another plan's
+# artifacts. A stale ledger misread as current progress makes controllers
+# skip whole task sequences — plan-scoping removes that failure structurally.
+#
+# Basename slugs collide when two plans share a filename (docs/alpha/plan.md
+# vs docs/beta/plan.md), so each workspace records its owning plan's path in
+# a plan-path marker (repo-relative in-repo, absolute outside). A workspace
+# owned by a different plan is skipped and the slug disambiguated with the
+# plan's parent-directory name, then a counter. A workspace with no marker
+# predates the marker scheme and is adopted for the current plan so in-flight
+# workspaces keep resolving — which means the first collision on such a
+# legacy workspace adopts instead of detecting; acceptable, marker-less
+# workspaces age out as plans finish.
 #
 # The workspace lives in the working tree (not under .git/) because Claude Code
 # treats .git/ as a protected path and denies agent writes there — which blocks
@@ -32,9 +42,65 @@ slug=$(basename "$plan" .md)
 [ -n "$slug" ] && [ "$slug" != "." ] && [ "$slug" != ".." ] \
   || { echo "cannot derive a workspace name from: $plan" >&2; exit 2; }
 
-root=$(git rev-parse --show-toplevel)
+# Physical path, spelled the way pwd -P spells the plan path below: on Git
+# Bash, rev-parse prints C:/Users/... while pwd prints /c/Users/..., and the
+# repo-relative marker check needs both in the same form.
+root=$(CDPATH='' cd -- "$(git rev-parse --show-toplevel)" && pwd -P)
 base="$root/.superpowers/sdd"
+
+# Normalize the plan path (physical directory, so relative/absolute/../
+# spellings of one plan compare equal) and express it as the marker value:
+# repo-relative when the plan lives under the repo root, absolute otherwise.
+plan_dir=$(CDPATH='' cd -- "$(dirname "$plan")" && pwd -P)
+plan_abs="$plan_dir/$(basename "$plan")"
+case "$plan_abs" in
+  "$root"/*) plan_id=${plan_abs#"$root"/} ;;
+  *)         plan_id=$plan_abs ;;
+esac
+
+# Serialize ownership selection so concurrent plans cannot claim one marker.
+mkdir -p "$base" || { echo "cannot create workspace base: $base" >&2; exit 1; }
+lock="$base/.workspace-lock"
+attempt=0
+until mkdir "$lock" 2>/dev/null; do
+  if [ -e "$lock" ] && [ ! -d "$lock" ]; then
+    echo "cannot create workspace lock: $lock" >&2; exit 1
+  fi
+  [ -w "$base" ] || { echo "workspace base is not writable: $base" >&2; exit 1; }
+  attempt=$((attempt + 1))
+  [ "$attempt" -lt 100 ] || {
+    echo "workspace lock busy: $lock; confirm no helper is active before removing a stale lock" >&2
+    exit 1
+  }
+  sleep 0.05
+done
+trap 'rmdir "$lock" || echo "cannot remove workspace lock: $lock" >&2' EXIT
+
+# True when the workspace at $1 is (or becomes) this plan's: an existing
+# marker must name this plan; a missing marker means a new workspace or a
+# pre-marker legacy one, and either way the plan claims it by writing one.
+owns() {
+  if [ -e "$1/plan-path" ]; then
+    marker=$(cat "$1/plan-path") || { echo "cannot read workspace owner: $1/plan-path" >&2; exit 1; }
+    [ "$marker" = "$plan_id" ]
+  else
+    mkdir -p "$1" || { echo "cannot create workspace: $1" >&2; exit 1; }
+    printf '%s\n' "$plan_id" > "$1/plan-path" || { echo "cannot write workspace owner: $1/plan-path" >&2; exit 1; }
+  fi
+}
+
 dir="$base/$slug"
-mkdir -p "$dir"
-printf '*\n' > "$base/.gitignore"
-cd "$dir" && pwd
+if ! owns "$dir"; then
+  parent=$(basename "$plan_dir")
+  dir="$base/$slug-$parent"
+  if ! owns "$dir"; then
+    n=2
+    while ! owns "$base/$slug-$parent-$n"; do n=$((n + 1)); done
+    dir="$base/$slug-$parent-$n"
+  fi
+fi
+
+# Create-only: a repo may commit its own .gitignore here (e.g. to version
+# progress.md ledgers); overwriting it would revert that on every run.
+[ -e "$base/.gitignore" ] || printf '*\n' > "$base/.gitignore"
+CDPATH='' cd -- "$dir" && pwd
