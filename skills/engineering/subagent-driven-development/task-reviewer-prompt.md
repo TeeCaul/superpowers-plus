@@ -102,6 +102,15 @@ Subagent (general-purpose):
     unchanged code or spans tasks), report it as a ⚠️ item instead of
     broadening your search.
 
+    ## Inputs the Spec Does Not Name
+
+    Judge behavior on plausible inputs and environments by what a reasonable
+    user would expect; spec silence does not excuse a crash or data loss. Grade
+    by its effect on the user, while staying within the changed task's scope.
+    Before the verdict, list behavior you considered but declined to judge, with
+    a reason for each (or "None"). The controller must rule on each item or carry
+    it as an explicit unresolved limitation; do not silently drop it.
+
     ## Part 2: Code Quality
 
     **Code quality:**
@@ -176,7 +185,7 @@ Subagent (general-purpose):
 
 **Placeholders:**
 - `[MODEL]` — REQUIRED: reviewer model per SKILL.md Model Selection
-- `[BRIEF_FILE]` — REQUIRED: the task brief file (`scripts/task-brief PLAN N`
+- `[BRIEF_FILE]` — REQUIRED: the task brief file (`bash scripts/task-brief PLAN N`
   prints the path; same file the implementer worked from)
 - `[GLOBAL_CONSTRAINTS]` — project-wide constraints copied verbatim from
   the plan's Global Constraints section (version floors, naming rules,
@@ -188,7 +197,7 @@ Subagent (general-purpose):
 - `[BASE_SHA]` — commit before this task
 - `[HEAD_SHA]` — current commit
 - `[DIFF_FILE]` — REQUIRED: the path the controller wrote the review
-  package to (`scripts/review-package PLAN_FILE BASE HEAD` prints the
+  package to (`bash scripts/review-package PLAN_FILE BASE HEAD` prints the
   unique path it wrote; the package never enters the controller's context)
 
 **Reviewer returns:** Spec Compliance verdict (✅/❌/⚠️), Strengths, Issues
