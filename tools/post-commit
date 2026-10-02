@@ -5,7 +5,7 @@
 #          not change the reviewed content -- amends, cherry-pick-same, and
 #          (the common promotion case) a clean merge commit whose tree is
 #          identical to the branch it merged in, e.g. `dev -> staging`: "Trees
-#          match; SHAs differ only by the promotion merge commit" (see TODO.md
+#          match; SHAs differ only by the promotion merge commit" (see docs/maintainers/TODO.md
 #          promotion log). Without this, every such commit invalidates all
 #          three review sentinels and forces a from-scratch re-review of
 #          content that was already cleared, even though nothing changed.

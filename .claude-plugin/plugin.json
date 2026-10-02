@@ -1,7 +1,7 @@
 {
   "name": "superpowers-plus",
-  "description": "AI slop detection (300+ patterns, 0-100 scoring) and elimination (GVR rewrite loop, 11 strategies) plus 102 skills for engineering gates, wiki management, issue tracking, security audits, and productivity workflows.",
-  "version": "5.2.0",
+  "description": "AI slop detection (300+ patterns, 0-100 scoring) and elimination (GVR rewrite loop, 11 strategies) plus 124 skills for engineering gates, wiki management, issue tracking, security audits, and productivity workflows.",
+  "version": "5.3.0",
   "author": {
     "name": "Matt Bordenet",
     "email": "bordenet@users.noreply.github.com"

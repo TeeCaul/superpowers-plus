@@ -581,6 +581,13 @@ For a senior engineer setting up superpowers-plus for their organization:
 
 ---
 
+## Security Checklist for Overlays
+
+- Store API keys in `~/.codex/.env`; never hardcode them in skills.
+- Private skills that call external systems should log API activity for audit trails.
+- Review private MCP servers before deployment; they are a supply-chain risk.
+- `PERPLEXITY_API_KEY` and `OPENAI_API_KEY` send context to external APIs. Evaluate data classification before enabling them in sensitive workflows.
+
 ## Troubleshooting
 
 | Issue | Cause | Solution |
