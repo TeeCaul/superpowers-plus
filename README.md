@@ -1,390 +1,137 @@
 # superpowers-plus
 
+[![Tests](https://github.com/bordenet/superpowers-plus/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/bordenet/superpowers-plus/actions/workflows/test.yml)
+[![Release](https://img.shields.io/github/v/release/bordenet/superpowers-plus)](https://github.com/bordenet/superpowers-plus/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Skills for AI coding assistants that enforce the practices AI would otherwise skip. Can be used for non-coding workloads, too!
+AI coding assistants skip the practices that keep bugs out of production. They implement the first idea without weighing alternatives, patch symptoms instead of finding root causes, and declare work done without verifying it. Asking them to behave better in a system prompt doesn't hold: under context pressure, the instructions get forgotten.
 
-Tell your AI assistant what you're doing:
+superpowers-plus is 124 skills that make an assistant follow those practices, plus the machinery that enforces them from outside the model. Skills give the assistant a procedure: reproduce before fixing, generate three designs before picking one, send a diff to parallel specialist reviewers. Lifecycle hooks and git commit gates check the result. Git runs those gates whether or not the assistant remembers to ask for review.
 
-| You say... | Skill triggered |
-|------------|-----------------|
-| "Debug this test failure" | `systematic-debugging` enforces root cause before fixes |
-| "Build a new feature for X" | `feature-development` orchestrates the full lifecycle |
-| "Review this code" or `/sp-cr-battery [min-score]` | `code-review-battery` dispatches up to 7 parallel reviewers (optional 1.0–10.0 quality threshold, default 7.0) |
-| "I keep getting the same error" | `think-twice` dispatches a fresh sub-agent with zero shared context |
-| "Check for security issues" | `repo-security-scan` scans secrets, deps, patterns, config |
-| "I'm about to commit" | `unified-commit-gate` runs all 5 quality gates before the commit |
+It builds on Jesse Vincent's [obra/superpowers](https://github.com/obra/superpowers). Superpowers teaches an agent how to work; superpowers-plus adds more skills and the hooks and gates that make the work hard to skip. It also covers non-coding work: documents, wikis, issue tracking, research.
 
-## Platform Support
+## Quick Start
 
-| Platform | Status |
-|----------|--------|
-| **Claude Code** | ✅ Full support — skills, lifecycle hooks (SessionStart, PreCompact, PreToolUse), commit gates, pre-push hooks, and red-autonomy guardrails all install and run cleanly. |
-| **Augment Code** | ✅ Full support — skills, routing, commit gates, pre-push hooks, and MCP integrations install and run cleanly. |
+Requires bash 4+, git, and Node.js 18+. macOS ships bash 3.2, so run `brew install bash` first.
 
-## What This Is
+```bash
+git clone https://github.com/bordenet/superpowers-plus.git && cd superpowers-plus
+bash install.sh                 # skills, hooks, and runtime
+bash tools/install-hooks.sh     # git commit and push gates
+```
 
-AI coding assistants skip the practices that catch bugs before production: they implement the first idea without evaluating alternatives and claim "done" without verification. With `systematic-debugging` in place, the same assistant enforces root-cause-first investigation instead: reproduce, hypothesize, isolate, fix. No fix without completing that investigation first.
+Then tell your assistant what you're doing:
 
-Skills are structured procedures that AI agents follow automatically, and superpowers-plus adds skills across 9 domains.
+| You say... | What happens |
+|------------|--------------|
+| "Debug this test failure" | `systematic-debugging` requires a root cause before any fix |
+| "Build a new feature for X" | `feature-development` runs brainstorm, debate, plan, TDD, review, verify |
+| "Review this code" or `/sp-cr-battery` | `code-review-battery` starts with one combined reviewer and dispatches up to 7 parallel reviewers when the diff calls for specialists |
+| "I keep getting the same error" | `think-twice` hands the problem to a fresh sub-agent with no shared context |
+| "Check for security issues" | `repo-security-scan` covers secrets, dependencies, risky patterns, and config |
+| "I'm about to commit" | `unified-commit-gate` runs lint/build/test, style, review, language, and IP audit |
 
-Each skill exists because it caught a recurring, nagging problem.
+Full install options (Claude Code plugin, Codex, OpenCode, MCP server, Windows/WSL) are in [docs/INSTALLATION.md](docs/INSTALLATION.md).
 
-A system prompt is a suggestion the assistant can forget under context pressure. These skills are backed by lifecycle hooks and commit gates that run outside its own context, enforced by git itself once installed, not by whether it remembers to ask for review.
+## What Changes
 
-## The AI-Harness
+```text
+"This test started failing after yesterday's change. Fix it."
 
-Every `skill.md` an agent loads stays resident in the context window for the
-rest of the session and is re-sent on every LLM call. Most skill libraries let
-that cost grow unchecked. superpowers-plus runs a closed control loop over it -
-measure, shrink, guard - so instruction context is treated as a budgeted
-resource, not invisible overhead. Every box below is a real artifact in this
-repo.
+Without:  edit code -> test passes -> "Done."
+With:     reproduce -> find the root cause -> test hypotheses -> isolate
+          -> smallest fix -> verify -> review the diff -> commit gates
+```
 
-| Stage | Artifact | What it does |
-|-------|----------|--------------|
-| **Sensor** | [`tools/skill-size-audit.sh`](tools/skill-size-audit.sh) | Ranks every `skill.md` by byte count and exits non-zero when any exceeds the fleet threshold (default 10 KB). Bloat becomes a signal instead of silent drift. |
-| **Actuator** | [`kernel-split`](skills/engineering/kernel-split/skill.md) + [`tools/skill-partitioner`](tools/skill-partitioner) | Splits a monolithic skill into a small resident **kernel** and an on-demand **`reference.md`** that loads only when a specific lookup is needed. Keyword scoring draws the boundary; ambiguous sections go to a third file for human review. |
-| **Regulator** | [`artifact-budgets`](docs/harness/artifact-budgets.md) + `tests/harness/artifact-budgets.bats` | Byte budgets against a committed baseline manifest catch a skill that shrank today regrowing tomorrow. `BUDGET_MODE=advisory` warns; `BUDGET_MODE=strict` fails CI. |
+## Enforcement Outside the Model
 
-**Safety floor, non-negotiable:** hard gates, "never" rules, and
-run-every-time decision inputs always stay in the kernel. A split that moves a
-gate into the on-demand reference is wrong even when it scores a larger
-reduction.
+Most skill libraries are prompt text. If the model drops the instruction, nothing notices. superpowers-plus puts the checks where the model can't skip them:
 
-The loop then returns to the Sensor, every session and every commit. All three
-stages are wired up; kernel splits are being applied across the fleet, and
-[`docs/harness/reduction-history.md`](docs/harness/reduction-history.md) is the
-running ledger of before/after bytes per split - the numbers there, not any
-static diagram, are authoritative.
+- **Git hooks** run the commit gate chain on every `git commit` and `git push`. Changes to `skills/` need a passing code-review sentinel tied to the reviewed content before the commit goes through.
+- **Claude Code lifecycle hooks** (including SessionStart, UserPromptSubmit, PreCompact, and PreToolUse) route prompts to skills, save a resume prompt before context compaction, block pushes and branch deletions until a human approves them in the session, and stop commits made under the wrong git identity.
+- **CI** repeats the IP scan on the PR title and body, because a squash merge builds its commit message from those fields, not from any local commit.
 
-**Full design:** [docs/harness/README.md](docs/harness/README.md)
+## The AI-Harness: Instruction Context as a Budget
+
+Every skill an agent loads stays in its context window and is re-sent on every model call. superpowers-plus treats that context as a budgeted resource and runs a closed loop over it:
+
+| Stage | Artifact | Role |
+|-------|----------|------|
+| **Sensor** | [`tools/skill-size-audit.sh`](tools/skill-size-audit.sh) | Ranks every `skill.md` by size and fails when one exceeds the fleet threshold |
+| **Actuator** | [`kernel-split`](skills/engineering/kernel-split/skill.md) | Splits a large skill into a small always-loaded kernel and an on-demand reference |
+| **Regulator** | [`artifact-budgets`](docs/harness/artifact-budgets.md) | Byte budgets against a committed baseline, so a skill that shrank today can't quietly regrow |
+
+Measured results so far, from the [reduction ledger](docs/harness/reduction-history.md):
+
+| Skill | Before | Kernel after | Reduction |
+|-------|-------:|-------------:|----------:|
+| progressive-harsh-review | 18,018 B | 8,493 B | 52% |
+| debate | 13,660 B | 7,703 B | 43% |
+| context-ferry | 10,688 B | 7,122 B | 33% (below the 40% target; safety rules kept resident) |
+
+One rule outranks the byte savings: hard gates and "never" rules always stay in the kernel. That rule is enforced by review, not assumed: review caught all three of these splits moving or deleting safety content (anti-rubber-stamping rules, a required search step, a write-back procedure), and each was restored. Design: [docs/harness/README.md](docs/harness/README.md).
 
 ## Standout Skills
 
 | Skill | What it does |
-|-------|-------------|
-| [**code-review-battery**](skills/engineering/code-review-battery/skill.md) | Dispatches up to 7 specialist reviewers in parallel (Defect Finder, Design Critic, Guardian, Standards Enforcer, Performance Analyst; AttackerPersona on security-sensitive diffs, ShellRuntimeAuditor on shell-content diffs). BugPath Verifier activates in bug-fix mode. Slash command: `/sp-cr-battery [min-score]` (optional 1.0–10.0 quality threshold, default 7.0). |
-| [**llm-skill-review**](skills/engineering/llm-skill-review/skill.md) | Default reviewer for any skill.md or skill-adjacent tooling — covers LLM-execution safety (determinism, shell portability, tool contracts, cross-agent compatibility) and prose/design quality (absorbed from progressive-harsh-review) in one pass. Wired into `tools/pre-push` as Gate 6; supersedes both PHR and code-review-battery for `skills/*.md`. |
-| [**debate**](skills/engineering/debate/skill.md) | Generates 3+ decision options, builds a comparison matrix, then red-teams the winner. Requires adversarial review before committing to an approach. |
-| [**progressive-harsh-review**](skills/engineering/progressive-harsh-review/skill.md) | Three escalating critic personas score non-code deliverables (plans, docs, designs) on 5 dimensions. Score below 6 = rejected. Skill.md reviews now go through `llm-skill-review` instead. |
-| [**kernel-split**](skills/engineering/kernel-split/skill.md) | The AI-Harness actuator: partitions an oversized `skill.md` into an always-loaded kernel plus an on-demand `reference.md`, then installs a permanent context-budget regression test. Hard gates and "never" rules never leave the kernel. |
-| [**systematic-debugging**](skills/engineering/systematic-debugging/skill.md) | Enforces root-cause-first investigation: reproduce, hypothesize, isolate, fix. No fixes without completing Phase 1. |
-| [**feature-development**](skills/engineering/feature-development/skill.md) | Full lifecycle orchestrator: brainstorm, debate, plan, TDD, review, verify. |
-| [**think-twice**](skills/productivity/think-twice/skill.md) | Detects when the AI is stuck in a loop and dispatches a fresh sub-agent with zero shared context. Auto-triggers on circular reasoning. |
-| [**context-ferry**](skills/productivity/context-ferry/skill.md) | Generates a self-contained resume prompt before context compaction fires. Updates in-progress plan docs, captures pending questions and queued tasks verbatim. Slash command: `/context-ferry`. Auto-fires via PreCompact hook in Claude Code. |
-| [**human-comms-hygiene**](skills/writing/human-comms-hygiene/skill.md) | Helps reviewers and teammates act on commits, PRs, issues, and messages without hunting for the change or ask. |
-| [**detecting-ai-slop**](skills/writing/detecting-ai-slop/skill.md) | Scores text 0-100 for machine-generated patterns across lexical, structural, semantic, and stylometric dimensions. |
-| [**wiki-orchestrator**](skills/wiki/wiki-orchestrator/skill.md) | Pipeline for bulk documentation: de-dup, content, coherence, links, secrets, slop detection, fact-check, publish. |
-| [**evolution-loop**](skills/observability/evolution-loop/skill.md) | Self-improvement cycle: scans failures for recurring patterns, generates skill updates, tracks metrics over time. |
-| [**unified-commit-gate**](skills/engineering/unified-commit-gate/skill.md) | Runs all 5 commit gates in sequence (lint/build/test → style → code review → language → IP audit). Slash command: `/sp-commit`. Deep-dive into any gate via its individual skill. |
+|-------|--------------|
+| [**code-review-battery**](skills/engineering/code-review-battery/skill.md) | Starts with one combined reviewer (defects, guardrails, standards) and dispatches up to 7 specialist reviewers in parallel when the diff signals design, performance, security, or shell risk. A bug-path verifier joins in bug-fix mode. Configurable quality bar |
+| [**debate**](skills/engineering/debate/skill.md) | Three or more options, a comparison matrix, then a red-team pass on the winner before committing to a design |
+| [**systematic-debugging**](skills/engineering/systematic-debugging/skill.md) | Reproduce, hypothesize, isolate, fix. No fix until the investigation is complete |
+| [**feature-development**](skills/engineering/feature-development/skill.md) | The full lifecycle as one orchestrated sequence, so no phase gets skipped |
+| [**llm-skill-review**](skills/engineering/llm-skill-review/skill.md) | Reviews skills as infrastructure that models execute: determinism, shell portability, tool contracts, cross-agent behavior |
+| [**context-ferry**](skills/productivity/context-ferry/skill.md) | Writes a self-contained resume prompt before context compaction, so long sessions keep their state |
+| [**detecting-ai-slop**](skills/writing/detecting-ai-slop/skill.md) | Scores text 0-100 for machine-generated patterns across lexical, structural, semantic, and stylometric signals |
+| [**evolution-loop**](skills/observability/evolution-loop/skill.md) | Scans failures for recurring patterns and proposes skill updates |
 
-## Quick Start
+All 124 skills: [docs/SKILLS.md](docs/SKILLS.md). How they connect: [docs/SKILL_TAXONOMY.md](docs/SKILL_TAXONOMY.md).
 
-Install ([details below](#installation)):
+## Platform Support
 
-```bash
-git clone https://github.com/bordenet/superpowers-plus.git && cd superpowers-plus && bash install.sh
-```
-
-Enable pre-commit gates: `bash tools/install-hooks.sh`
-
-These hooks are required if you want the full commit-gate chain to run locally before `git commit` and `git push`.
-
-Then tell your AI assistant what you're doing. The trigger examples are near the top of this README.
-
-**CLI matching** (for debugging): `node ~/.codex/superpowers-augment/superpowers-augment.js match-skills "my tests keep failing"`
+| Platform | Support |
+|----------|---------|
+| **Claude Code** | Full: skills, lifecycle hooks, commit and push gates, approval guardrails |
+| **Augment Code** | Full: skills, routing, commit and push gates, MCP integrations |
+| **Codex, OpenCode** | Skills, via the [platform install guides](docs/INSTALLATION.md). Git gates work with any assistant because git runs them; Claude Code lifecycle hooks do not apply |
+| **Gemini CLI** | No installer. `GEMINI.md` points Gemini at the repo's agent guidance |
+| **MCP clients** (e.g. Claude Desktop) | Skills exposed as `find_skills`, `use_skill`, and `match_skills` tools |
 
 ## What's Included
 
-**124 skills** across 9 domains:
-
 | Domain | Examples |
 |--------|----------|
-| **engineering** | Code review battery, debate, TDD, progressive review, systematic debugging, feature lifecycle |
-| **productivity** | TODO tracking (see [task tagging taxonomy](skills/productivity/todo-management/references/taxonomy.md)), plan-and-execute, think-twice, adversarial search, domain design, screenshot visual input |
-| **writing** | AI slop detection/elimination, professional-language-audit, table discipline, writing-skills authoring, plain-language explanation (`/eli5`) |
-| **wiki** | Orchestrator pipeline, link verification, credential scanning, fact-checking |
+| **engineering** | Code review battery, debate, TDD, systematic debugging, feature lifecycle, commit gates |
+| **productivity** | Task tracking, plan-and-execute, think-twice, adversarial search, context-ferry |
+| **writing** | AI slop detection and rewriting, professional-language audit, table discipline, plain-language explanations |
+| **wiki** | Publishing pipeline with link verification, credential scanning, and fact-checking |
 | **observability** | Completeness checks, evolution loop, audit validation, diagnostics |
-| **issue-tracking** | Authoring, editing, verification, link checks, comment debunking |
+| **issue-tracking** | Authoring, editing, verification, link checks |
 | **security** | Repo scanning, CVE scanning, IP protection, instruction guard |
-| **research** | Perplexity integration, research incorporation, expert interviewing |
+| **research** | Research integration, expert interviewing |
 | **experimental** | Self-prompting patterns |
 
-**Full skill reference:** [docs/SKILLS.md](docs/SKILLS.md)
-
-## Installation
-
-**Prerequisites:** bash 4+, git, Node.js 18+. npm is only required for the optional MCP server below.
-
-> **macOS note:** macOS ships bash 3.2 (frozen at GPLv2 since 2007). Install modern bash first: `brew install bash`. The installer will detect the old version and tell you exactly how to fix it.
-
-### Choose Your Path
-
-- **Most users:** core install below (`git clone` + `bash install.sh`)
-- **Augment Agent only:** one-liner bootstrap for Ubuntu / Debian / WSL
-- **Claude Code:** use `install.sh` for complete setup, or `/plugin install` for plugin-only mode
-- **Codex / OpenCode / Gemini CLI:** use the platform-specific instructions below
-- **Claude Desktop or another MCP client:** do the core install first, then add the optional MCP server
-
-### macOS / Linux / WSL
-
-```bash
-git clone https://github.com/bordenet/superpowers-plus.git
-cd superpowers-plus
-bash install.sh      # use 'bash' explicitly — macOS default shell is zsh; ./install.sh may pick the wrong interpreter
-```
-
-The installer:
-
-- Detects wrong shell (sh, zsh, dash) and tells you to use bash
-- Detects old bash (3.2) with platform-specific install instructions
-- Checks for missing commands (git, node) with remediation steps
-- Auto-detects your platform and offers to install missing dependencies
-- Auto-fixes Windows CRLF line endings if detected
-
-**Windows/WSL:** Run `wsl --install -d Ubuntu` first, then use the commands above from within WSL. If you cloned superpowers-plus on Windows *before* running the installer, repair line endings with: `bash tools/harsh-review.sh --fix`
-
-**Linux containers (Docker/CI):** Works as root without sudo. The installer detects the environment automatically.
-
-### Augment Agent (One-Liner: Ubuntu / Debian / WSL)
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/bordenet/superpowers-plus/main/install-augment-superpowers.sh | bash
-```
-
-> **Security note:** Review the script before piping: `curl -fsSL <url> | less` — then re-run with `| bash` once satisfied.
-
-Sets up the Augment adapter and a skills directory. Does **not** install the full skill suite; use git clone above for that.
-
-### Claude Code
-
-```bash
-/plugin install https://github.com/bordenet/superpowers-plus
-```
-
-Plugin mode installs skills only. For a complete setup that includes superpowers-core, use the `install.sh` path above.
-
-When Claude Code lifecycle guardrails are enabled, the SessionStart hook bounds its local logs. It rotates `~/.claude/hooks/hook-audit.log` above 1 MiB and keeps `.1` and `.2`. The block reporter reads those retained generations with the live log as one bounded chronological window. It rotates the metrics file selected by `CLAUDE_SKILL_ROUTER_METRICS` above 5 MiB and keeps `.1`; the default is `~/.claude/hooks/skill-router-metrics.jsonl`. Rotation is best-effort: missing, unreadable, symlinked, or unexpected file entries do not stop a Claude Code session. A recent empty rotation lock is preserved, while an empty lock older than five minutes is reclaimed.
-
-### Codex
+## Building on It
 
 ```text
-Fetch and follow instructions from https://raw.githubusercontent.com/bordenet/superpowers-plus/main/.codex/INSTALL.md
-```
-
-### OpenCode
-
-```text
-Fetch and follow instructions from https://raw.githubusercontent.com/bordenet/superpowers-plus/main/.opencode/INSTALL.md
-```
-
-### Gemini CLI
-
-```bash
-gemini extensions install https://github.com/bordenet/superpowers
-gemini extensions install https://github.com/bordenet/superpowers-plus
-```
-
-### MCP Server (Optional)
-
-After completing the core install above, you can optionally expose the installed skills over MCP.
-
-Use this only if your client supports MCP and you want `superpowers-plus` skills exposed as MCP tools: `find_skills`, `use_skill`, and `match_skills`.
-
-If you're using the install paths above without an MCP client, you can skip this section.
-
-**Do I need this?**
-
-- **No** — if you're using the CLI or one of the install methods above (git clone + bash)
-- **Yes** — if you're using Claude Desktop or another MCP-compatible client and want the skills available as MCP tools
-- **Yes** — if you're using Claude Code plugin and want skills exposed as tools (not just rules)
-
-**Requires:** Node.js 18+. Verify: `node --version` (npm is bundled with Node.js — no separate install needed)
-
-> **Security scope:** The MCP server communicates over stdio, not a network socket (see the `StdioServerTransport` import in `mcp/superpowers-mcp.js`); there is no port or bind address at all. It has no authentication of its own, so anything able to spawn the process gets the same file-read access it has.
-
-1. `cd mcp && npm install` — review `mcp/package-lock.json` for unexpected transitive dependencies before running in sensitive environments
-2. Add this to your MCP client configuration. Example for Claude (`~/.claude/settings.json`). Replace `/absolute/path/to/superpowers-plus` with the absolute path from `pwd` in your checkout (no trailing slash, no `~/` shorthand — use the full path):
-
-   ```json
-   {
-     "mcpServers": {
-       "superpowers-plus": {
-         "command": "node",
-         "args": ["/absolute/path/to/superpowers-plus/mcp/superpowers-mcp.js"]
-       }
-     }
-   }
-   ```
-
-3. Restart your client. Verify: run `find_skills` in the MCP client — expected output lists ~108 available skill names.
-
-If `find_skills` returns an error or is missing: check `node --version` (must be 18+), rerun `cd mcp && npm install`, and confirm the args path is absolute (not `~/` or relative).
-
-**Error responses:** `use_skill` and `match_skills` return `{ isError: true }` alongside a plain-text explanation for invalid input (missing/empty `skill_name` or `query`, or a `query` over 2000 characters) rather than throwing — check `isError` before treating a tool result as skill content.
-
-### Using as a Dependency
-
-See [docs/examples/adopter-install-example.sh](docs/examples/adopter-install-example.sh) for a robust install script template.
-
-### Updating
-
-```bash
-bash install.sh --upgrade
-```
-
-### Verify Installation
-
-After running `install.sh`, confirm skills loaded successfully:
-
-```bash
-node ~/.codex/superpowers-augment/superpowers-augment.js find-skills
-# Expected: skill catalog printed without errors (superpowers-plus contributes 124 skills)
-```
-
-Run the full 30-check diagnostic:
-
-```bash
-bash tools/doctor-checks.sh
-# Expected: "All 30 checks passed. Your superpowers are in perfect health."
-```
-
-If skills aren't loading, see [Troubleshooting](#troubleshooting).
-
-## Configuration
-
-Copy `.env.example` to `~/.codex/.env` for runtime integrations, then set permissions: `chmod 600 ~/.codex/.env`. All variables are optional unless noted. Invalid values for adapter keys cause runtime errors when those features are invoked; check `skills/issue-tracking/_adapters/` and `skills/wiki/_adapters/` for the list of valid values. If `~/.codex/.env` does not exist when a skill tries to read it, the skill will emit a `source: no such file` error — run `bash tools/todo-preflight.sh --create-if-missing` to initialize it.
-
-| Variable | Required? | Purpose |
-|----------|-----------|---------|
-| `ISSUE_TRACKER_TYPE` | Optional | Adapter key; shipped adapters: `github`, `jira`; see `skills/issue-tracking/_adapters/platform-template.md` for others |
-| `WIKI_PLATFORM` | Optional | Adapter key; see `skills/wiki/_adapters/platform-template.md` to add yours |
-| `TODO_FILE_PATH` | Optional | Path to your persistent TODO.md file; used by `todo-crud.sh` and all todo-management tools |
-| `PERPLEXITY_API_KEY` | Optional | Enables deep research escalation (~$0.01/query); a stuck agent can trigger many queries — monitor spend and disable in shared environments |
-| `THINK_TWICE_USE_PERPLEXITY` | Optional | `false` by default; set `true` to let think-twice escalate to Perplexity when stuck |
-| `OPENAI_API_KEY` | Optional | Enables embedding-based skill matching; TF-IDF runs without it (free but slower) |
-
-## Skill Coordination
-
-![superpowers-plus Skill Orchestration Map](docs/images/skill-orchestration-map.png)
-
-Skills form pipelines with explicit dependencies. Each pipeline has its own dedicated diagram in [docs/SKILL_TAXONOMY.md](docs/SKILL_TAXONOMY.md):
-
-| Pipeline | Diagram | Purpose |
-|----------|---------|---------|
-| Commit Gates | [Commit Gate Chain](docs/SKILL_TAXONOMY.md#commit-gate-chain) | `/sp-commit` → 5 sequential gates before `git commit` |
-| Completion Gate | [Completion Gate](docs/SKILL_TAXONOMY.md#completion-gate) | output-verification or exhaustive-audit → verification-before-completion |
-| Wiki Pipeline | [Wiki Pipeline](docs/SKILL_TAXONOMY.md#wiki-pipeline) | 7-stage quality chain → publish → post-publish drift check |
-| Debug Flow | [Debug Flow](docs/SKILL_TAXONOMY.md#debug-flow) | debug-conductor → systematic-debugging + 6 internal sub-agents |
-| Code Review Chain | [Code Review Chain](docs/SKILL_TAXONOMY.md#code-review-chain) | requesting → battery → receiving → respond |
-| Full Dependency Graph | [skill-dependency-graph.md](docs/skill-dependency-graph.md) | Skill relationships with typed edges (enables / escalates-to) |
-
-For how triggers fire, how skill names are resolved, how compression works, and the scoring algorithm behind `match-skills`, see **[docs/DESIGN.md](docs/DESIGN.md)**.
-
-### Quality Gates Policy
-
-The commit-gate chain (`unified-commit-gate` → pre-commit → style → code review → language → IP audit) runs automatically on every `git commit` when hooks are installed. The IP audit blocks commits containing proprietary identifiers, internal hostnames, or credentials. If a push is blocked, run `bash tools/public-repo-ip-check.sh` to see exactly what matched; if it's a false positive, add an exception pattern to `.ip-patterns`.
-
-The red-autonomy, internal-terms, and git-identity hooks write privacy-limited records to `~/.claude/hooks/hook-audit.log`. Run `python3 tools/hook-block-report.py` for fired-but-unadjudicated and unknown counts grouped by hook and exit code. A fired gate is not automatically a true positive; false-positive claims require local reproduction. Detailed output is local-only; commit timestamped aggregates only. See [Hook Block Audit](docs/hook-block-audit.md) for the record format and review workflow.
-
-**`git commit --no-verify` exists but bypassing gates is prohibited.** If a gate is genuinely broken, fix the gate — don't disable it. Changes to `skills/` additionally require a passing `code-review-battery` sentinel before the commit hook allows the commit. The sentinel format is `v1|SHA|VERDICT|TIMESTAMP|min-score=N`; write it only via `tools/run-battery.sh [--min-score N] --verdict PASS`. The primary slash command is `/sp-cr-battery`.
-
-**Skill priority when installed and git-cloned versions coexist:** The agent runtime loads skills from `~/.codex/skills/` (installed copy). If you are developing new skills in the git clone, run `bash install.sh --upgrade` to sync the installed copy, or point `SUPERPOWERS_SKILLS_DIR` to the git checkout for live reloading (see `docs/ARCHITECTURE.md`). If `SUPERPOWERS_SKILLS_DIR` points to a nonexistent or incomplete directory the runtime falls back to `~/.codex/skills/`; verify with `node ~/.codex/superpowers-augment/superpowers-augment.js find-skills` after setting the variable.
-
-> **Token budget:** A wiki-orchestrator pipeline (de-dup → content → coherence → links → secrets → slop → fact-check → publish) typically costs 30–50k tokens per edit. Run `bash tools/skill-cost-analyzer.sh` before scheduling bulk changes to estimate impact.
->
-> **Compression:** Skills are compressed before injection via `lib/compress.js` (20–40% token reduction). Boilerplate sections (`When to Use`, `Examples`, etc.) are stripped. Operative content — `<EXTREMELY_IMPORTANT>` blocks, `Failure Modes`, `Incident Log`, `References`, `Hallucination Prevention` — is preserved unconditionally. Add `compress: false` to a skill's YAML frontmatter to opt out. See `docs/ARCHITECTURE.md § Skill Content Compression` for details.
-
-## Extending
-
-```text
-obra/superpowers (Jesse Vincent, MIT: 14 skills folded in directly, v2.6.0+)
+obra/superpowers (Jesse Vincent, MIT)
     └── superpowers-plus (this repo)
-            └── your-org-skills (private)
+            └── your-org-skills (private overlay)
 ```
 
-## Upstream & Attribution
-
-superpowers-plus folds in [obra/superpowers](https://github.com/obra/superpowers) directly: as of v2.6.0, all 14 of Jesse Vincent's obra/superpowers skills (MIT license) are bundled in this repo's own `skills/` tree, nine of them hardened here with additional enforcement gates. superpowers-plus tracks the upstream by adding `obra` as a git remote and periodically merging; see [CONTRIBUTING.md](CONTRIBUTING.md) for the exact process.
-
-**Solo developers:** Core skills — `systematic-debugging`, `code-review-battery`, `feature-development`, `think-twice`, `verification-before-completion` — work fully offline with just git and GitHub. No external integrations required.
-
-**Enterprise teams:** `superpowers-plus` is a public foundation. Skills become significantly more powerful when you build a private enterprise repo that overlays, extends, and overloads it with organization-specific integrations:
-
-| Layer | Examples |
-|-------|---------|
-| **Issue tracking** | Jira, Linear, Azure DevOps work items, GitHub Issues |
-| **Version control** | Azure DevOps Repos, GitLab, GitHub |
-| **Meeting intelligence** | Fathom, Otter.ai, your enterprise meeting recorder |
-| **Knowledge bases** | Confluence, MediaWiki, Outline Wiki |
-
-Private skills can shadow or extend public ones: route `todo-management` tasks to Jira instead of a local file, add company-specific rules to `code-review-battery`, or wire `wiki-orchestrator` directly to your Confluence instance. Give agents MCP server access to these systems and they gain context from your entire stack automatically — issue history, meeting transcripts, internal docs, and your team's conventions all become first-class inputs.
-
-**Enterprise overlay security checklist:**
-
-- Store API keys in `~/.codex/.env` — never hardcode them in skills
-- Private skills that call external systems should log API activity for audit trails
-- Review private MCP servers before deployment (supply chain risk)
-- `PERPLEXITY_API_KEY` and `OPENAI_API_KEY` send context to external APIs — evaluate data classification before enabling in sensitive workflows
-
-See [Enterprise Adopters Guide](docs/ENTERPRISE_ADOPTERS_GUIDE.md).
-
-## Tools
-
-Utility scripts in `tools/`:
-
-| Tool | Purpose |
-|------|---------|
-| `run-battery.sh` | Runs the automated quality suite (harsh-review, trigger tests, export integrity, skill router tests); writes the `.code-review-cleared` sentinel. Accepts `--verdict PASS\|PASS_WITH_NITS` and optional `--min-score N` (1.0–10.0, default 7.0). |
-| `commit-gate.sh` | Runs lint/test/harsh-review and mints a short-lived review token consumed by the pre-commit hook. |
-| `try-sentinel-fast-forward.sh` | Re-stamps an already-passed `.code-review-cleared`/`.phr-cleared` sentinel onto a new HEAD without a full re-review, but only for changes where every touched file is a registered mechanical fixture proven byte-for-byte reproducible from its generator. |
-| `doctor-checks.sh` | 30-check diagnostic across all installed skills |
-| `harsh-review.sh` | Enforces file endings, shebangs, syntax, ShellCheck |
-| `harsh-review-loop.sh` | Iterative harsh review until clean |
-| `dangerous-pattern-scan.sh` | Pre-commit scanner for `rm -rf`, `chmod 777`, `curl\|bash` |
-| `install-hooks.sh` | Installs git hooks (pre-commit, pre-push) |
-| `todo-preflight.sh` | Resolves `TODO_FILE_PATH` from `~/.codex/.env` |
-| `todo-lock.sh` | Advisory file locking for TODO.md (cross-machine) |
-| `todo-crud.sh` | TODO.md create/read/update/delete operations |
-| `todo-maintenance.sh` | Archival and cleanup of completed tasks |
-| `investigation-crud.sh` | Investigation state CRUD (hypotheses, evidence, verdicts) |
-| `public-repo-ip-check.sh` | Scans for proprietary content before public push |
-| `hook-block-report.py` | Reads one bounded tail across retained hook-audit generations and reports fired-but-unadjudicated and unknown events |
-| `skill-trigger-validator.sh` | Audits trigger overlaps and missing triggers |
-| `skill-cost-analyzer.sh` | Reports token cost per skill |
-| `skill-size-audit.sh` | Context-budget sensor: ranks every `skill.md` by byte count, flags any over the fleet threshold |
-| `skill-partitioner` | Kernel/reference actuator behind `kernel-split` |
-| `measure-artifact-sizes.sh` | Context-budget regulator: measures always-on artifacts against `tests/harness/artifact-baselines.json` |
-| `generate-skill-dag.js` | Generates skill dependency graph (Mermaid) |
-| `skill-metrics-analyzer.sh` | Analyzes skill usage metrics |
-| `router-precision.py` | Reports advisory-router hint rate, hints per prompt, precision, and automatic versus explicit skill invocation from bounded local JSONL parsing. See [Skill Router Precision](docs/router-precision.md). |
-| `parse-frontmatter.sh` | Extracts YAML frontmatter from skill files |
-| `slop-check.sh` | Centralized AI slop gate -- blocking check for em/en-dash, boosters, buzzwords, and filler openers; advisory warnings for weak intensifiers and terms with a high false-positive rate in engineering prose. Shared by wiki, PHR, Linear, and recruiting paths. See `skills/writing/detecting-ai-slop/reference.md` for the pattern catalog. |
-
-## Troubleshooting
-
-| Problem | Fix |
-|---------|-----|
-| `bash 3.2 is too old` | macOS Apple Silicon: `brew install bash`, then `/opt/homebrew/bin/bash install.sh`. Intel Mac: `/usr/local/bin/bash install.sh` |
-| `This script requires bash` | You ran with sh or zsh. Use: `bash install.sh` |
-| `Missing required commands: git` | macOS: `xcode-select --install`. Linux: `sudo apt install git` |
-| `Missing required commands: node` | macOS: `brew install node`. Linux: `sudo apt install nodejs` |
-| Install partially failed | Run `bash install.sh --verbose` to see which step failed; then `bash tools/doctor-checks.sh` for full diagnosis. Re-running `bash install.sh` is safe — it skips already-completed steps. |
-| `.env missing / source error` | Run `bash tools/todo-preflight.sh --create-if-missing` to initialize `~/.codex/.env` from `.env.example`. Then `chmod 600 ~/.codex/.env`. |
-| Perplexity tools not found | Verify `PERPLEXITY_API_KEY` in `~/.codex/.env`, then run `bash setup/mcp-perplexity.sh` |
-| Issue tracking fails | Set `ISSUE_TRACKER_TYPE` in `.env`; verify adapter exists in `skills/issue-tracking/_adapters/` |
-| Wiki operations fail | Set `WIKI_PLATFORM` in `.env`; verify adapter exists in `skills/wiki/_adapters/` |
-| Push blocked by IP audit | Run `bash tools/public-repo-ip-check.sh` to see what matched; if a false positive, add an exception pattern to `.ip-patterns` |
-| CRLF errors on WSL | Cloned on Windows before running installer: `bash tools/harsh-review.sh --fix` |
-| Skills not loading | Run `bash tools/doctor-checks.sh` to diagnose; then `bash install.sh --upgrade` if checks fail |
-| Stale skill count | `bash install.sh --upgrade`; verify with `node ... find-skills` — catalog should print without errors |
-| TODO lock timeout | Another agent holds the lock; `todo-lock.sh steal` |
-| Doctor reports drift | `bash tools/doctor-checks.sh --fix-safe` |
+All 14 obra/superpowers skills are bundled here, nine of them hardened with extra enforcement gates; upstream changes are merged periodically. Teams can add a private repo on top that shadows or extends these skills with their own issue tracker, wiki, and conventions. See the [Enterprise Adopters Guide](docs/ENTERPRISE_ADOPTERS_GUIDE.md), including its security checklist for overlays.
 
 ## Documentation
 
-[Architecture](docs/ARCHITECTURE.md) · [The AI-Harness](docs/harness/README.md) · [Full Skill Reference](docs/SKILLS.md) · [Task Tagging Taxonomy](skills/productivity/todo-management/references/taxonomy.md) · [Enterprise Adopters](docs/ENTERPRISE_ADOPTERS_GUIDE.md) · [Contributing](docs/CONTRIBUTING.md) · [Upgrading](UPGRADING.md) · [Changelog](CHANGELOG.md)
+| Topic | Where |
+|-------|-------|
+| Install, configure, troubleshoot | [docs/INSTALLATION.md](docs/INSTALLATION.md) |
+| Tools and quality-gate policy | [docs/TOOLS.md](docs/TOOLS.md) |
+| Architecture and design | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/DESIGN.md](docs/DESIGN.md) |
+| AI-Harness | [docs/harness/README.md](docs/harness/README.md) |
+| Skill reference | [docs/SKILLS.md](docs/SKILLS.md) |
+| Writing a new skill | [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) |
+| Upstream sync and PR gates | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| Upgrading, changes, security | [UPGRADING.md](UPGRADING.md), [CHANGELOG.md](CHANGELOG.md), [SECURITY.md](SECURITY.md) |
 
 ## License
 
