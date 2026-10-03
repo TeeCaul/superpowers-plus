@@ -8,6 +8,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Claude Desktop guide in the README:** explains what each Desktop tab gets. The Code tab uses the same `~/.claude/` install as Claude Code. Chat and Cowork use uploaded ZIPs. The MCP server works through `claude_desktop_config.json`. `docs/INSTALLATION.md` gives the config file locations.
+- **`install.sh` rebuilds the Claude Desktop ZIPs:** every install and upgrade runs `tools/package-for-claude.sh` into `~/superpowers-plus-claude-desktop/` and reports how many ZIPs changed. A packaging problem logs a warning and never fails the install. New tests in `test/package-for-claude.bats`.
+
 ### Changed
 
 - **Pre-push test gate:** the local fast-suite timeout is now 600s by default (was a hard-coded 300s, which the ~4-minute suite exceeded on a loaded machine) and can be set with `PRE_PUSH_TEST_TIMEOUT`. A timeout is now reported as a timeout instead of as a test failure. New tests in `test/pre-push-test-gate-timeout.bats`.
@@ -17,6 +22,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Claude Desktop ZIPs now pass claude.ai's upload checks:** `tools/package-for-claude.sh` writes `SKILL.md`, keeps only the six frontmatter fields claude.ai accepts (any other field fails the upload), and includes each skill's companion files instead of only `resources/`. It no longer runs `rm -rf` on the output directory. It deletes only its own ZIPs and refuses a directory that holds other files. Manifest names are validated before use, and the default output moved to `~/superpowers-plus-claude-desktop/` so it can't overwrite another skill pack's ZIPs. ZIPs built before this release in `~/superpowers-claude-desktop/` use the old format and fail upload; upload from the new folder instead. The packager now overwrites or prunes only ZIPs shaped like the ones it builds, resolves a symlinked `--output` before its safety check, and names the changed skills in its summary. Packaged copies carry a note telling Claude to skip steps that need this repo's scripts. `uninstall.sh --purge` removes the new folder's ZIPs.
 - **En-dash no longer flagged as AI slop:** `tools/slop-check.sh`, `detecting-ai-slop`, and `eliminating-ai-slop` flag only the em-dash. The en-dash is correct punctuation for ranges and paired terms. A new test asserts en-dash text passes the gate. The commit-msg hook's ASCII normalization of commit messages is unchanged.
 - **Evidence verifier no longer misreports failed commands as timeouts:** `tools/verify-cr-battery-evidence.js` matched "timeout" anywhere in Node's error message, which embeds the command text, so any non-zero exit from a command mentioning "timeout" (including absence checks for it) was reported as a 30s timeout. It now relies on Node's own timeout code (`ETIMEDOUT`). Commands killed by a signal are reported as such instead of as a spawn failure, and an argv-mode command killed by a signal no longer counts as exit 0 (it could previously verify against an `exit_code: 0` expectation). New tests cover the false positive, a real timeout, a timeout of a command that ignores SIGTERM, and both signal cases.
 
