@@ -118,10 +118,7 @@ skills/{domain}/{skill-name}/
 1. Feature branch → push to `origin`, open PR into `origin/dev`
 2. `dev → main`: explicit human instruction + batch review approval
 
-There is no `staging` branch. It was retired in October 2026. It was a
-pass-through: everything promoted into it went on to `main` unchanged, nothing
-was released from it, and the extra hop doubled every promotion's PRs and CI
-runs.
+There is no `staging` branch (retired October 2026; it only passed content through to `main`).
 
 A promotion PR carries content already reviewed on its source branch — it is
 not new feature work. Once the human instruction and batch review approval
