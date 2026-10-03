@@ -26,8 +26,7 @@ decision.
 feat/* off dev --MR--> dev --QA--> staging --QA--> main
 ```
 
-team A follows the same flow as `bordenet/superpowers-plus`. Their
-flow doc (if separate) is authoritative for source/target pairings.
+team A's own flow doc is authoritative for source/target pairings.
 
 ### Legacy teams (waterfall via develop + tag-based releases)
 

@@ -91,7 +91,7 @@ fi
 # local branch name) > HEAD^.
 #
 # This repo's actual workflow base for feature/fix branches is `dev` --
-# `main` is a downstream promotion target reached via dev -> staging -> main,
+# `main` is a downstream promotion target reached via dev -> main,
 # often many commits ahead of dev. Falling back straight to main (the
 # previous chain here) diffed against a stale ancestor and picked up every
 # file that had landed in dev but not yet promoted to main, producing

@@ -99,7 +99,7 @@ echo "                 (requires python3 in PATH — install: brew install pytho
 echo "  • post-commit: promotes .code-review-cleared, .phr-cleared, and"
 echo "                 .llm-skill-review-cleared to the new HEAD SHA whenever the tree is"
 echo "                 provably unchanged (tree:* staged sentinels, amends, and clean"
-echo "                 promotion merges like dev -> staging), skipping a redundant re-review."
+echo "                 promotion merges like dev -> main), skipping a redundant re-review."  
 echo ""
 echo "Before your FIRST commit (bootstrap):"
 echo "  1. Run code-review-battery          — writes .code-review-cleared sentinel"

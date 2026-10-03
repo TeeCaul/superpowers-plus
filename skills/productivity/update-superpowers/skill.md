@@ -39,7 +39,6 @@ Pulls latest from all superpowers source repos, runs the cascading install, and 
 `sp-update` operates on the currently checked-out superpowers-plus branch. The user can specify which branch to update:
 
 - `sp-update --branch dev` — update and checkout the dev branch
-- `sp-update --branch dev` — update and checkout the dev branch
 - `sp-update` (no branch) — update the current branch
 - `sp-update --branch main` — update and checkout main
 
@@ -55,7 +54,6 @@ Run each step in order. Failure handling varies by step — see rules below.
 
 Parse the user's request for a `--branch` parameter. If not specified, sp-update operates on the currently checked-out branch.
 
-- If the user says `sp-update --branch dev` → update the dev branch
 - If the user says `sp-update --branch dev` → update the dev branch
 - If the user says `sp-update --branch main` → update the main branch
 - If the user says `sp-update` (no branch) → update the current branch
