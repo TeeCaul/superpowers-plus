@@ -134,6 +134,7 @@ HOOK_PARITY_EXIT_CODE=0
 AUGMENT_MENU_DIR="${HOME}/.agents/skills"
 # Claude Desktop Chat/Cowork: upload-ready ZIPs (claude.ai has no upload API)
 CLAUDE_DESKTOP_ZIP_DIR="${HOME}/superpowers-plus-claude-desktop"
+CLAUDE_DESKTOP_ZIPS="not built"   # set by package_claude_desktop_skills
 
 # Options (set before sourcing modules so they can read these)
 FORCE=false
@@ -548,8 +549,13 @@ print_summary() {
         echo ""
     fi
     echo "  Claude Desktop:    Code tab uses the Claude Code install above"
-    echo "                     Chat/Cowork: upload ZIPs from $CLAUDE_DESKTOP_ZIP_DIR"
-    echo "                     at https://claude.ai/customize/skills"
+    if [[ "$CLAUDE_DESKTOP_ZIPS" == "built" ]]; then
+        echo "                     Chat/Cowork: upload ZIPs from $CLAUDE_DESKTOP_ZIP_DIR"
+        echo "                     at https://claude.ai/customize/skills"
+    else
+        echo "                     Chat/Cowork ZIPs $CLAUDE_DESKTOP_ZIPS;"
+        echo "                     run: bash tools/package-for-claude.sh"
+    fi
     echo ""
     echo "Personal skills:"
     # Source of truth for "what this installer just deployed" is the manifest
@@ -700,14 +706,19 @@ package_claude_desktop_skills() {
     for _cmd in python3 zip unzip; do
         if ! command -v "$_cmd" >/dev/null 2>&1; then
             log_info "Claude Desktop ZIPs: skipped ($_cmd not installed)"
+            CLAUDE_DESKTOP_ZIPS="skipped: $_cmd not installed"
             return 0
         fi
     done
     local out rc=0
     out="$(bash "$packager" --quiet --output "$CLAUDE_DESKTOP_ZIP_DIR" 2>&1)" || rc=$?
     if [[ $rc -eq 0 ]]; then
-        log_info "${out##*$'\n'}"
+        CLAUDE_DESKTOP_ZIPS="built"
+        # %s, not log_info's %b: the line embeds $HOME, and a backslash in a
+        # path must print as-is rather than as an escape sequence.
+        printf '%b %s\n' "${BLUE}[INFO]${NC}" "${out##*$'\n'}"
     else
+        CLAUDE_DESKTOP_ZIPS="failed (exit $rc)"
         log_warn "Claude Desktop ZIPs not rebuilt (exit $rc). Run: bash tools/package-for-claude.sh"
         printf '%s\n' "$out" | while IFS= read -r _line; do
             printf '  output: %s\n' "$_line"
