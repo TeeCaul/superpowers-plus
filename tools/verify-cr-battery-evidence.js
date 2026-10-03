@@ -208,7 +208,12 @@ function replay(claim, cwd) {
       }
       return { status: 'error', detail: `argv spawn failed: ${r.error.message}` };
     }
-    const exitCode = r.status !== null ? r.status : 0;
+    if (r.signal) {
+      // status is null when a signal killed the process; treating that as exit 0
+      // would let a killed command verify against an exit_code 0 expectation.
+      return { status: 'error', detail: `argv command killed by signal ${r.signal}` };
+    }
+    const exitCode = r.status;
     const stdout   = r.stdout || '';
     return parseExpectation(stdout, exitCode, ev.expectation);
   }
@@ -225,8 +230,12 @@ function replay(claim, cwd) {
       maxBuffer: 4 * 1024 * 1024,
     });
   } catch (err) {
-    // Timeout: execSync sets err.killed=true and signal varies (SIGTERM, SIGKILL, null on some platforms)
-    if (err.killed || /ETIMEDOUT/.test(err.code || '') || /timed? ?out/i.test(err.message || '')) {
+    // Timeout: execSync reports it only through err.code === 'ETIMEDOUT' (err.killed is
+    // set by async exec, never by execSync; checked on Node 22 and 26).
+    // Do not pattern-match err.message: for an ordinary non-zero exit it is
+    // "Command failed: <command text>", so any command containing the word
+    // "timeout" (e.g. an absence check for it) would be misreported as a timeout.
+    if (err.code === 'ETIMEDOUT') {
       return { status: 'error', detail: `command exceeded ${VERIFIER_TIMEOUT_MS}ms timeout` };
     }
     // maxBuffer exceeded: ENOBUFS (older Node), ERR_CHILD_PROCESS_STDIO_MAXBUFFER (newer Node); both thrown by execSync
@@ -236,6 +245,9 @@ function replay(claim, cwd) {
     if (err.status !== null && err.status !== undefined) {
       exitCode = err.status;
       stdout = err.stdout ? err.stdout.toString() : '';
+    } else if (err.signal) {
+      // Killed by a signal that was not our timeout (e.g. the command signalled itself).
+      return { status: 'error', detail: `command killed by signal ${err.signal}` };
     } else {
       return { status: 'error', detail: `command spawn failed: ${err.message}` };
     }

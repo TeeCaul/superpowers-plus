@@ -12,12 +12,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Pre-push test gate:** the local fast-suite timeout is now 600s by default (was a hard-coded 300s, which the ~4-minute suite exceeded on a loaded machine) and can be set with `PRE_PUSH_TEST_TIMEOUT`. A timeout is now reported as a timeout instead of as a test failure. New tests in `test/pre-push-test-gate-timeout.bats`.
 - **Retired fork references removed:** `tools/sp-help.sh`, `superpowers-help`, and `update-superpowers` no longer point at the `bordenet/superpowers` fork, which has not been used since v2.6.0 bundled the obra/superpowers skills.
-- **`update-superpowers` and `superpowers-help` corrected:** they now describe what `sp-update` actually does (`install.sh --yes`, then each managed overlay's installer) and the real skill-name prefixes; `install.sh --check` help no longer mentions a separate core. A new test fails if retired fork or `superpowers-core` references come back.
+- **`update-superpowers` and `superpowers-help` corrected:** they now describe what `sp-update` actually does (`install.sh --yes`, then each managed overlay's installer), and `superpowers-help` drops an inaccurate description of skill-name prefixes; `install.sh --check` help no longer mentions a separate core. A new test fails if retired fork or `superpowers-core` references come back.
 - **Small fixes:** the `install.sh` header comment version matches its `VERSION` variable; `GEMINI.md` title names both Gemini CLI and Gemini Code Assist.
 
 ### Fixed
 
 - **En-dash no longer flagged as AI slop:** `tools/slop-check.sh`, `detecting-ai-slop`, and `eliminating-ai-slop` flag only the em-dash. The en-dash is correct punctuation for ranges and paired terms. A new test asserts en-dash text passes the gate. The commit-msg hook's ASCII normalization of commit messages is unchanged.
+- **Evidence verifier no longer misreports failed commands as timeouts:** `tools/verify-cr-battery-evidence.js` matched "timeout" anywhere in Node's error message, which embeds the command text, so any non-zero exit from a command mentioning "timeout" (including absence checks for it) was reported as a 30s timeout. It now relies on Node's own timeout code (`ETIMEDOUT`). Commands killed by a signal are reported as such instead of as a spawn failure, and an argv-mode command killed by a signal no longer counts as exit 0 (it could previously verify against an `exit_code: 0` expectation). New tests cover the false positive, a real timeout, a timeout of a command that ignores SIGTERM, and both signal cases.
 
 ## [5.3.0] - 2026-10-02
 
