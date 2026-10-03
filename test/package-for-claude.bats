@@ -182,3 +182,23 @@ PY
   [ "$status" -eq 2 ]
   [ -f "$OUT/my-own-skill.zip" ]
 }
+
+# The packager writes the marker and recognizes its own ZIPs by it; uninstall.sh
+# keeps its own copy because it can run without the repo checkout. Pin the copies
+# together so rewording the note can't silently stop --purge from cleaning up.
+@test "uninstall.sh matches the packager's PACKAGED_MARKER" {
+  marker="$(sed -n 's/^PACKAGED_MARKER="\(.*\)"$/\1/p' "$PKG")"
+  [ -n "$marker" ]
+  grep -qF "*\"$marker\"*" "$REPO/uninstall.sh"
+}
+
+@test "uninstall.sh --purge removes a ZIP built by the real packager" {
+  [ "$(bash -c 'echo ${BASH_VERSINFO[0]}')" -ge 4 ] || skip "uninstall.sh needs bash 4+"
+  export HOME="$SANDBOX/home"
+  manifest '"debate"'
+  run bash "$PKG" --output "$HOME/superpowers-plus-claude-desktop" --manifest "$SANDBOX/manifest.json" --quiet
+  [ "$status" -eq 0 ]
+  run bash "$REPO/uninstall.sh" --yes --purge
+  [ "$status" -eq 0 ]
+  [ ! -e "$HOME/superpowers-plus-claude-desktop/debate.zip" ]
+}

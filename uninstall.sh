@@ -396,7 +396,8 @@ fi
 # Main
 # ============================================================================
 # True when ZIP has the shape tools/package-for-claude.sh writes, including the
-# marker note it puts in every packaged SKILL.md.
+# marker note it puts in every packaged SKILL.md. Must equal PACKAGED_MARKER in
+# tools/package-for-claude.sh; test/package-for-claude.bats checks that.
 _is_packaged_skill_zip() {
     command -v unzip >/dev/null 2>&1 || return 1
     local base listing line has_skill=0
