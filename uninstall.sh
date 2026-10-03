@@ -60,6 +60,7 @@ ENV_FILE="${CODEX_DIR}/.env"
 SKILLS_DIR="${CODEX_DIR}/skills"
 CLAUDE_SKILLS_DIR="${HOME}/.claude/skills"
 AUGMENT_MENU_DIR="${HOME}/.agents/skills"
+CLAUDE_DESKTOP_ZIP_DIR="${HOME}/superpowers-plus-claude-desktop"
 INSTALL_STATE_DIR="${CODEX_DIR}/superpowers-plus/install-state"
 MANAGED_DIR="${CODEX_DIR}/superpowers-plus"
 ADAPTER_DIR="${CODEX_DIR}/superpowers-augment"
@@ -394,6 +395,23 @@ fi
 # ============================================================================
 # Main
 # ============================================================================
+# True when ZIP has the shape tools/package-for-claude.sh writes, including the
+# marker note it puts in every packaged SKILL.md.
+_is_packaged_skill_zip() {
+    command -v unzip >/dev/null 2>&1 || return 1
+    local base listing line has_skill=0
+    base="$(basename "$1" .zip)"
+    listing="$(unzip -Z1 "$1" 2>/dev/null)" || return 1
+    while IFS= read -r line; do
+        [[ "$line" == "$base/"* ]] || return 1
+        [[ "$line" == "$base/SKILL.md" ]] && has_skill=1
+    done <<< "$listing"
+    [[ $has_skill -eq 1 ]] || return 1
+    local body
+    body="$(unzip -p "$1" "$base/SKILL.md" 2>/dev/null)" || return 1
+    [[ "$body" == *"Packaged for Claude Desktop Chat and Cowork"* ]]
+}
+
 main() {
     echo ""
     log_info "superpowers-plus uninstaller v${VERSION}"
@@ -431,6 +449,7 @@ main() {
         echo "  [PURGE] Managed checkout: ~/.codex/superpowers-plus/"
         [[ -d "$HOME/.codex/superpowers" ]] && echo "  [PURGE] Legacy obra clone (if present): ~/.codex/superpowers/"
         echo "  [PURGE] Runtime: doctor-backups, review dirs, session markers"
+        echo "  [PURGE] Claude Desktop ZIPs: ~/superpowers-plus-claude-desktop/"
     fi
     echo ""
 
@@ -530,6 +549,19 @@ main() {
         [[ -d "${CODEX_DIR}/superpowers-review" ]] && run_rm "${CODEX_DIR}/superpowers-review"
         [[ -f "${CODEX_DIR}/.superpowers-session" ]] && run_rm "${CODEX_DIR}/.superpowers-session"
         remove_cli_links
+        # Claude Desktop upload ZIPs built by install.sh. Remove the ZIPs, then
+        # the folder only if nothing else is in it.
+        if [[ -d "$CLAUDE_DESKTOP_ZIP_DIR" ]]; then
+            local _zip
+            for _zip in "$CLAUDE_DESKTOP_ZIP_DIR"/*.zip; do
+                [[ -f "$_zip" ]] || continue
+                # Same ownership rule as tools/package-for-claude.sh: remove
+                # only ZIPs shaped like the packager's (everything under
+                # <name>/, with <name>/SKILL.md), never a user's own archive.
+                _is_packaged_skill_zip "$_zip" && run_rm "$_zip"
+            done
+            [[ "$DRY_RUN" == "true" ]] || rmdir "$CLAUDE_DESKTOP_ZIP_DIR" 2>/dev/null || true
+        fi
         # Ownership marker for ~/.codex; stale once everything is purged, and it
         # would block a later install of a different superpowers ecosystem.
         [[ -f "${CODEX_DIR}/.superpowers-ecosystem" ]] && run_rm "${CODEX_DIR}/.superpowers-ecosystem"
