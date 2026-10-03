@@ -13,7 +13,7 @@
 #        --upgrade       Pull latest changes before installing
 #        --version       Show version number
 # PLATFORM: macOS (Intel/Apple Silicon), Linux (Debian/Ubuntu, RHEL/Fedora, Arch), WSL
-# VERSION: 2.6.0
+# VERSION: 5.3.0
 # ARCHITECTURE: This file is a thin orchestrator. Implementation lives in
 #               lib/install/*.sh modules, sourced in dependency order below.
 # -----------------------------------------------------------------------------
@@ -263,7 +263,7 @@ OPTIONS
 
     --check
         Validate prerequisites without installing anything. Reports the
-        status of Node.js, git, superpowers-core, and skill counts.
+        status of Node.js, git, and skill counts.
 
     -y, --yes
         Auto-accept all prompts (e.g., dependency installation) without
