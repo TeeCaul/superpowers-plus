@@ -23,6 +23,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DEFAULT_MANIFEST="$SCRIPT_DIR/claude-desktop-skills.json"
 DEFAULT_OUTDIR="$HOME/superpowers-plus-claude-desktop"
+# Written into every packaged SKILL.md; how this script recognizes its own ZIPs.
+PACKAGED_MARKER="Packaged for Claude Desktop Chat and Cowork"
 
 # ── CLI args ──────────────────────────────────────────────────────────────────
 MANIFEST="$DEFAULT_MANIFEST"
@@ -121,9 +123,10 @@ elif [[ -d "$(dirname "$OUTDIR")" ]]; then
   OUTDIR="$(cd "$(dirname "$OUTDIR")" && pwd -P)/$(basename "$OUTDIR")"
 fi
 
-# is_our_zip ZIP: true when every entry sits under <name>/ and <name>/SKILL.md
-# exists, i.e. the ZIP has the shape this script writes. Only those are ever
-# overwritten or pruned, so a mistyped --output can't delete someone's archive.
+# is_our_zip ZIP: true when every entry sits under <name>/, <name>/SKILL.md
+# exists, and that SKILL.md carries the note this script writes. Only those are
+# ever overwritten or pruned, so neither a mistyped --output nor a skill ZIP the
+# user made elsewhere gets deleted. uninstall.sh applies the same rule.
 is_our_zip() {
   local base listing
   base="$(basename "$1" .zip)"
@@ -133,7 +136,8 @@ is_our_zip() {
     [[ "$line" == "$base/"* ]] || return 1
     [[ "$line" == "$base/SKILL.md" ]] && has_skill=1
   done <<< "$listing"
-  [[ $has_skill -eq 1 ]]
+  [[ $has_skill -eq 1 ]] || return 1
+  unzip -p "$1" "$base/SKILL.md" 2>/dev/null | grep -q "$PACKAGED_MARKER"
 }
 
 # ── OUTDIR must be new, empty, or hold only ZIPs this script made ─────────────
@@ -218,6 +222,8 @@ PY
 TMPWORK="$(mktemp -d)" || { echo "ERROR: mktemp -d failed" >&2; exit 2; }
 trap 'rm -rf "$TMPWORK"' EXIT
 mkdir -p "$OUTDIR" || { echo "ERROR: Cannot create output dir: $OUTDIR" >&2; exit 2; }
+# Absolute from here on: zip runs from inside $TMPWORK.
+OUTDIR="$(cd "$OUTDIR" && pwd -P)"
 
 FAIL=0
 PACKED=()

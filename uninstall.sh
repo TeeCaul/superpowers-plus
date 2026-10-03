@@ -395,6 +395,21 @@ fi
 # ============================================================================
 # Main
 # ============================================================================
+# True when ZIP has the shape tools/package-for-claude.sh writes, including the
+# marker note it puts in every packaged SKILL.md.
+_is_packaged_skill_zip() {
+    command -v unzip >/dev/null 2>&1 || return 1
+    local base listing line has_skill=0
+    base="$(basename "$1" .zip)"
+    listing="$(unzip -Z1 "$1" 2>/dev/null)" || return 1
+    while IFS= read -r line; do
+        [[ "$line" == "$base/"* ]] || return 1
+        [[ "$line" == "$base/SKILL.md" ]] && has_skill=1
+    done <<< "$listing"
+    [[ $has_skill -eq 1 ]] || return 1
+    unzip -p "$1" "$base/SKILL.md" 2>/dev/null | grep -q "Packaged for Claude Desktop Chat and Cowork"
+}
+
 main() {
     echo ""
     log_info "superpowers-plus uninstaller v${VERSION}"
@@ -537,7 +552,11 @@ main() {
         if [[ -d "$CLAUDE_DESKTOP_ZIP_DIR" ]]; then
             local _zip
             for _zip in "$CLAUDE_DESKTOP_ZIP_DIR"/*.zip; do
-                [[ -f "$_zip" ]] && run_rm "$_zip"
+                [[ -f "$_zip" ]] || continue
+                # Same ownership rule as tools/package-for-claude.sh: remove
+                # only ZIPs shaped like the packager's (everything under
+                # <name>/, with <name>/SKILL.md), never a user's own archive.
+                _is_packaged_skill_zip "$_zip" && run_rm "$_zip"
             done
             [[ "$DRY_RUN" == "true" ]] || rmdir "$CLAUDE_DESKTOP_ZIP_DIR" 2>/dev/null || true
         fi

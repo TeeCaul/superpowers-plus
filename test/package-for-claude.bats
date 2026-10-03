@@ -73,7 +73,7 @@ PY
 
 @test "drops ZIPs for skills removed from the manifest unless --keep" {
   mkdir -p "$SANDBOX/retired-skill"
-  echo x > "$SANDBOX/retired-skill/SKILL.md"
+  echo "> **Packaged for Claude Desktop Chat and Cowork.**" > "$SANDBOX/retired-skill/SKILL.md"
   mkdir -p "$OUT"
   (cd "$SANDBOX" && zip -qr "$OUT/retired-skill.zip" retired-skill)
   manifest '"debate"'
@@ -146,11 +146,39 @@ PY
 }
 
 @test "uninstall.sh --purge removes the Desktop ZIPs and keeps the user's other files" {
+  [ "$(bash -c 'echo ${BASH_VERSINFO[0]}')" -ge 4 ] || skip "uninstall.sh needs bash 4+"
   export HOME="$SANDBOX/home"
   mkdir -p "$HOME/superpowers-plus-claude-desktop"
-  : > "$HOME/superpowers-plus-claude-desktop/debate.zip"
+  mkdir -p "$SANDBOX/debate" "$SANDBOX/mine/my-own-skill"
+  echo "> **Packaged for Claude Desktop Chat and Cowork.**" > "$SANDBOX/debate/SKILL.md"
+  echo mine > "$SANDBOX/mine/my-own-skill/SKILL.md"
+  (cd "$SANDBOX/mine" && zip -qr "$HOME/superpowers-plus-claude-desktop/my-own-skill.zip" my-own-skill)
+  (cd "$SANDBOX" && zip -qr "$HOME/superpowers-plus-claude-desktop/debate.zip" debate)
+  echo p > "$SANDBOX/p.txt"
+  (cd "$SANDBOX" && zip -q "$HOME/superpowers-plus-claude-desktop/photos.zip" p.txt)
   echo mine > "$HOME/superpowers-plus-claude-desktop/notes.txt"
   run bash "$REPO/uninstall.sh" --yes --purge
+  [ "$status" -eq 0 ]
   [ ! -e "$HOME/superpowers-plus-claude-desktop/debate.zip" ]
+  [ -f "$HOME/superpowers-plus-claude-desktop/photos.zip" ]
+  [ -f "$HOME/superpowers-plus-claude-desktop/my-own-skill.zip" ]
   [ -f "$HOME/superpowers-plus-claude-desktop/notes.txt" ]
+}
+
+@test "a relative --output whose parent does not exist yet works" {
+  manifest '"debate"'
+  cd "$SANDBOX"
+  run bash "$PKG" --output new/zips --manifest "$SANDBOX/manifest.json" --quiet
+  [ "$status" -eq 0 ]
+  [ -f "$SANDBOX/new/zips/debate.zip" ]
+}
+
+@test "keeps a skill-shaped ZIP the user made elsewhere" {
+  mkdir -p "$SANDBOX/src/my-own-skill" "$OUT"
+  echo mine > "$SANDBOX/src/my-own-skill/SKILL.md"
+  (cd "$SANDBOX/src" && zip -qr "$OUT/my-own-skill.zip" my-own-skill)
+  manifest '"debate"'
+  run bash "$PKG" --output "$OUT" --manifest "$SANDBOX/manifest.json" --quiet
+  [ "$status" -eq 2 ]
+  [ -f "$OUT/my-own-skill.zip" ]
 }
