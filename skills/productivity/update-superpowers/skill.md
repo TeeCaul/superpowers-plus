@@ -5,7 +5,7 @@ source: superpowers-plus
 augment_menu: true
 triggers: ["/sp-update", "update superpowers", "upgrade superpowers", "pull superpowers", "refresh superpowers", "update skills", "upgrade skills", "superpowers-update", "sp-update --branch", "update superpowers staging", "update superpowers dev"]
 anti_triggers: ["install superpowers", "uninstall superpowers"]
-description: "Update superpowers-plus to latest, reruns the install cascade (superpowers-core fork → superpowers-plus → configured overlays), and verify with sp-doctor. Supports --branch to update a specific superpowers-plus branch."
+description: "Update superpowers-plus to latest, rerun its installer and any managed overlay installs, and verify with sp-doctor. Supports --branch to update a specific superpowers-plus branch."
 summary: "Use when: updating superpowers to latest and ensuring the full skill chain is healthy."
 coordination:
   group: productivity
@@ -76,10 +76,10 @@ sp-update --verbose
 1. Fetches the specified branch from remote
 2. Checks out the branch (if specified)
 3. Fast-forward merges or force-resets to latest remote
-4. Runs `install.sh --upgrade` to cascade the install
-   - `install.sh` updates superpowers-core (bordenet/superpowers fork) from origin main
+4. Runs `install.sh --yes` to redeploy
+   - The 14 obra/superpowers core skills ship inside superpowers-plus (since v2.6.0), so there is no separate core repo to update
    - Deploys superpowers-plus assets and skills to ~/.codex/skills/
-   - Overlay installs are NOT handled by sp-update; they're auto-discovered by sp-doctor
+   - Then reruns `install.sh --yes` in each managed overlay repo under ~/.codex/superpowers-*/
 
 **Rules:**
 - sp-update is the primary tool for updating superpowers-plus
@@ -91,7 +91,7 @@ sp-update --verbose
 ### Step 2: Cascading install (handled by sp-update)
 
 sp-update automatically runs the cascading install. The flow is:
-1. `install.sh --upgrade` updates obra/superpowers
+1. `install.sh --yes` redeploys superpowers-plus, including the 14 bundled obra/superpowers skills
 2. Deploys superpowers-plus skills to ~/.codex/skills/
 3. Deploys work tools to ~/.local/bin/
 
@@ -147,9 +147,9 @@ When the user says "update my superpowers" or "sp-update":
 **Key behaviors:**
 - sp-update fetches, checks out, and pulls the specified branch (or current if not specified)
 - sp-update auto-resets diverged branches to prevent stale installations
-- sp-update cascades: superpowers-core → superpowers-plus → skill deployment
+- sp-update cascades: superpowers-plus install → managed overlay installs
 - sp-doctor REPORTS issues (use `--fix-safe` or `doctor-checks.sh --fix` for auto-fixes)
-- Overlay source dirs are auto-discovered by sp-doctor, not by sp-update
+- sp-update updates managed overlay installs; sp-doctor separately auto-discovers overlay source dirs for its health checks
 
 ## Important Notes
 

@@ -86,12 +86,11 @@ node ~/.codex/superpowers-augment/superpowers-augment.js use-skill "<skill-name>
 
 ---
 
-## Understanding the Two Axes
+## Understanding Activation
 
 | Axis | Values | What It Means |
 |------|--------|---------------|
 | **Activation** | 🦸 auto-triggered / 🔧 explicit | Auto-triggered skills fire when trigger phrases are detected. Explicit skills must be invoked by name. |
-| **Source** | `superpowers:` (core) / `superpowers-plus:` (extended) | Core skills come from Jesse Vincent's [obra/superpowers](https://github.com/obra/superpowers) via the [bordenet/superpowers](https://github.com/bordenet/superpowers) fork. Extended skills add domain-specific capabilities. |
 
 **The 1% Rule:** If there's even a 1% chance a superpower applies, let it fire. Don't suppress with "this is simple."
 
@@ -142,7 +141,7 @@ spo:skill    # loads from overlay source repo (requires SP_OVERLAY_SOURCE_DIR)
 | Reporting skills from memory instead of running discovery | Run `find-skills` before answering — never enumerate from memory |
 | Dumping the full catalog as first response | Start with count summary + "what do you want to do?" |
 | Missing overlay skills from `SP_OVERLAY_SOURCE_DIR` | Overlay adds skills not in base install — `find-skills` covers both sources |
-| Confusing superpowers vs explicit skills | Two axes: activation (auto/explicit) and source (core/extended) |
+| Confusing superpowers vs explicit skills | The axis that matters is activation: auto-triggered vs explicit. Bundled obra/superpowers skills and superpowers-plus skills install together and look the same at runtime |
 | Recommending a skill without confirming it's installed | Run `find-skills {name}` or `match-skills` before recommending |
 | Stale skill descriptions in output | If `find-skills` shows `>` as description, the installed copy needs re-syncing — run `install.sh` |
 
@@ -151,7 +150,6 @@ spo:skill    # loads from overlay source repo (requires SP_OVERLAY_SOURCE_DIR)
 | Resource | URL |
 |----------|-----|
 | **Core superpowers (upstream)** | <https://github.com/obra/superpowers> (Jesse Vincent, MIT) |
-| **Core superpowers (fork)** | <https://github.com/bordenet/superpowers> |
 | **superpowers-plus** | <https://github.com/bordenet/superpowers-plus> |
 | **Architecture** | <https://github.com/bordenet/superpowers-plus/blob/main/docs/ARCHITECTURE.md> |
 | **Contributing** | <https://github.com/bordenet/superpowers-plus/blob/main/docs/CONTRIBUTING.md> |
