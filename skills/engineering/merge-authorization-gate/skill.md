@@ -90,7 +90,7 @@ A revoke phrase ("do not merge", "cancel the merge", "hold the merge") in a late
 
 Steps 4 and 5 are independent. Neither substitutes for the other.
 
-`dev -> staging -> main` promotions carry their own approval rules (see `AGENTS.md`); a `staging -> main` promotion additionally needs a batch review. This gate does not lower those bars.
+`dev -> main` promotions need explicit human instruction plus a batch review (see `AGENTS.md`). This gate does not lower those bars.
 
 ## Sub-agent Rules
 

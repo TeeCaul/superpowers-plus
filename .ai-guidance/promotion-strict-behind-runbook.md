@@ -2,11 +2,11 @@
 
 ## Symptom
 
-On a promotion PR (`dev→staging`, `staging→main`, or a back-sync PR `main→staging` / `main→dev`), all 4 required checks (Node.js Tests, Quality Checks, Security Scan, Shell Tests) show SUCCESS, but `mergeStateStatus` stays `BEHIND` indefinitely, and `gh pr merge` refuses with "head branch is not up to date with the base branch."
+On a promotion PR (`dev→main`, or the back-sync PR `main→dev`), all 4 required checks (Node.js Tests, Quality Checks, Security Scan, Shell Tests) show SUCCESS, but `mergeStateStatus` stays `BEHIND` indefinitely, and `gh pr merge` refuses with "head branch is not up to date with the base branch."
 
 ## Root cause
 
-`dev`/`staging`/`main` never fast-forward from each other — every promotion is a merge commit. The `strict` required-status-checks setting demands the head branch already contain the base's tip before merging. On a small diff (~4 commits) this was observed to self-resolve within about a minute of checks completing. On a larger diff (~28 commits) it stayed stuck for 20+ minutes with no sign of resolving. This diagnosis is based on direct observation during the 2026-07-12 promotion cycle, not GitHub documentation — treat the specific timing numbers as anecdotal, not a guarantee.
+`dev` and `main` never fast-forward from each other — every promotion is a merge commit. The `strict` required-status-checks setting demands the head branch already contain the base's tip before merging. On a small diff (~4 commits) this was observed to self-resolve within about a minute of checks completing. On a larger diff (~28 commits) it stayed stuck for 20+ minutes with no sign of resolving. This diagnosis is based on direct observation during the 2026-07-12 promotion cycle, not GitHub documentation — treat the specific timing numbers as anecdotal, not a guarantee.
 
 ## First: confirm every check has actually FINISHED
 
@@ -54,9 +54,7 @@ Resolve `<branch>` to the PR's **base** branch (not head) for the scenario you'r
 
 | Scenario | `<branch>` = |
 |---|---|
-| `dev → staging` PR | `staging` |
-| `staging → main` PR | `main` |
-| back-sync `main → staging` PR | `staging` |
+| `dev → main` PR | `main` |
 | back-sync `main → dev` PR | `dev` |
 
 Use `tools/promotion-strict-toggle.sh` — do not hand-type raw `gh api PATCH` calls. The script verifies each change via read-back before trusting it, and writes a timestamped sentinel while `strict` is disabled so a forgotten restore is machine-detectable rather than silent (see "Enforcement" below).

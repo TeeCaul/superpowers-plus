@@ -3,7 +3,7 @@ name: update-superpowers
 disable-model-invocation: true
 source: superpowers-plus
 augment_menu: true
-triggers: ["/sp-update", "update superpowers", "upgrade superpowers", "pull superpowers", "refresh superpowers", "update skills", "upgrade skills", "superpowers-update", "sp-update --branch", "update superpowers staging", "update superpowers dev"]
+triggers: ["/sp-update", "update superpowers", "upgrade superpowers", "pull superpowers", "refresh superpowers", "update skills", "upgrade skills", "superpowers-update", "sp-update --branch", "update superpowers dev"]
 anti_triggers: ["install superpowers", "uninstall superpowers"]
 description: "Update superpowers-plus to latest, rerun its installer and any managed overlay installs, and verify with sp-doctor. Supports --branch to update a specific superpowers-plus branch."
 summary: "Use when: updating superpowers to latest and ensuring the full skill chain is healthy."
@@ -30,7 +30,7 @@ Pulls latest from all superpowers source repos, runs the cascading install, and 
 ## When to Use
 
 - User says "update my superpowers" or "upgrade skills"
-- User says "sp-update --branch staging" to target a specific branch
+- User says "sp-update --branch dev" to target a specific branch
 - After a known change has been pushed to any superpowers repo
 - Periodic maintenance to stay current
 
@@ -38,12 +38,11 @@ Pulls latest from all superpowers source repos, runs the cascading install, and 
 
 `sp-update` operates on the currently checked-out superpowers-plus branch. The user can specify which branch to update:
 
-- `sp-update --branch staging` — update and checkout the staging branch
 - `sp-update --branch dev` — update and checkout the dev branch
 - `sp-update` (no branch) — update the current branch
 - `sp-update --branch main` — update and checkout main
 
-**Valid branches:** `main`, `staging`, `dev`. The three-tier flow is `dev → staging → main`.
+**Valid branches:** `main`, `dev`. The flow is `dev → main`. The `staging` branch was retired; a clone still on it should run `sp-update --branch main`.
 
 When the user specifies a branch, sp-update will fetch, checkout, and update that branch. After the update, the superpowers-plus checkout remains on the specified branch until changed explicitly.
 
@@ -55,7 +54,6 @@ Run each step in order. Failure handling varies by step — see rules below.
 
 Parse the user's request for a `--branch` parameter. If not specified, sp-update operates on the currently checked-out branch.
 
-- If the user says `sp-update --branch staging` → update the staging branch
 - If the user says `sp-update --branch dev` → update the dev branch
 - If the user says `sp-update --branch main` → update the main branch
 - If the user says `sp-update` (no branch) → update the current branch

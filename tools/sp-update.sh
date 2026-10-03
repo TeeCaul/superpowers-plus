@@ -62,7 +62,7 @@ OPTIONS
 
 EXAMPLES
     sp-update                       # Update current branch
-    sp-update --branch staging      # Switch to and update staging
+    sp-update --branch dev          # Switch to and update dev
     sp-update --branch dev --force  # Force-update dev, discarding local changes
     sp-update --force               # Required if local branch has diverged from remote
 EOF

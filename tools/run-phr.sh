@@ -26,7 +26,7 @@
 #
 #   The post-commit hook DOES promote .phr-cleared in HEAD-mode: after any
 #   commit whose tree matches the sentinel's recorded SHA (amend-only edits,
-#   and clean promotion merges such as dev -> staging where the merge
+#   and clean promotion merges such as dev -> main where the merge
 #   commit's tree is identical to the branch it merged in), the sentinel is
 #   carried forward to the new HEAD SHA without a fresh PHR round. See
 #   tools/post-commit.
