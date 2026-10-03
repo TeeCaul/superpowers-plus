@@ -4,7 +4,7 @@
 # PURPOSE: Reduce review double-runs after a commit whose tree provably did
 #          not change the reviewed content -- amends, cherry-pick-same, and
 #          (the common promotion case) a clean merge commit whose tree is
-#          identical to the branch it merged in, e.g. `dev -> staging`: "Trees
+#          identical to the branch it merged in, e.g. `dev -> main`: "Trees
 #          match; SHAs differ only by the promotion merge commit" (see docs/maintainers/TODO.md
 #          promotion log). Without this, every such commit invalidates all
 #          three review sentinels and forces a from-scratch re-review of

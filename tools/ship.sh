@@ -162,9 +162,9 @@ case "$BRANCH" in
   dev|staging|main)
     echo "ERROR: refusing to ship FROM canonical branch '$BRANCH'." >&2
     echo "  ship.sh merges with --delete-branch, which would target '$BRANCH'." >&2
-    echo "  For dev->staging / staging->main promotions use:" >&2
+    echo "  For dev->main promotions use:" >&2
     echo "    gh pr create --base <target> --head $BRANCH ... && gh pr merge <N> --merge" >&2
-    echo "  (no --delete-branch). See AGENTS.md '3-Tier promotion'." >&2
+    echo "  (no --delete-branch). See AGENTS.md '2-Tier promotion'." >&2
     exit 1
     ;;
 esac
