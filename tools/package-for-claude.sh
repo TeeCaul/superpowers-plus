@@ -166,9 +166,9 @@ fi
 # write_upload_skill SRC DEST NAME: write DEST/SKILL.md from SRC with frontmatter
 # reduced to the upload-safe keys; fail if name/description break upload rules.
 write_upload_skill() {
-  python3 - "$1" "$2" "$3" <<'PY'
+  python3 - "$1" "$2" "$3" "$PACKAGED_MARKER" <<'PY'
 import re, sys
-src, dest, name = sys.argv[1:4]
+src, dest, name, marker = sys.argv[1:5]
 ALLOWED = ("name", "description", "license", "compatibility", "metadata", "allowed-tools")
 text = open(src, encoding="utf-8").read()
 m = re.match(r"\A---\n(.*?)\n---\n", text, re.S)
@@ -191,7 +191,7 @@ if len(desc) > 1024:
 if "<" in desc or ">" in desc:
     sys.exit(f"ERROR: {src}: description contains < or >, which uploads reject")
 kept = [l for k in order if k in ALLOWED for l in blocks[k]]
-NOTE = ("\n> **Packaged for Claude Desktop Chat and Cowork.** These tabs have no superpowers-plus "
+NOTE = (f"\n> **{marker}.** These tabs have no superpowers-plus "
         "checkout and no access to your machine's shell. Skip any step that runs a repo script (`tools/...`, "
         "`~/.codex/...`) or calls a skill you don't have, say in one line that you skipped it, "
         "and carry out the rest.\n")
