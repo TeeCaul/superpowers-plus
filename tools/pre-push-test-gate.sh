@@ -85,8 +85,16 @@ for _cand in timeout gtimeout; do
     fi
 done
 
+# The fast suite takes ~4 minutes on a typical laptop; 600s leaves headroom
+# for a loaded machine. Override with PRE_PUSH_TEST_TIMEOUT (whole seconds).
+TEST_TIMEOUT_SECS="${PRE_PUSH_TEST_TIMEOUT:-600}"
+if [[ ! "$TEST_TIMEOUT_SECS" =~ ^[1-9][0-9]*$ ]]; then
+    echo -e "  ${RED}❌ PRE_PUSH_TEST_TIMEOUT must be a positive whole number of seconds (got '$TEST_TIMEOUT_SECS').${NC}"
+    exit 1
+fi
+
 if [[ -n "$TEST_TIMEOUT_BIN" ]]; then
-    test_cmd=("$TEST_TIMEOUT_BIN" "300" bash "$REPO_ROOT/tools/test-all.sh" --fast)
+    test_cmd=("$TEST_TIMEOUT_BIN" "$TEST_TIMEOUT_SECS" bash "$REPO_ROOT/tools/test-all.sh" --fast)
 else
     test_cmd=(bash "$REPO_ROOT/tools/test-all.sh" --fast)
 fi
@@ -95,7 +103,17 @@ fi
 # it needs to decide (it `break`s on the first content-bearing ref, so stdin
 # may not be at EOF yet); this redirect is what actually guarantees test-all.sh
 # (or anything it invokes) can't read a stray line from stdin instead of /dev/null.
-if ! "${test_cmd[@]}" < /dev/null; then
+test_rc=0
+_test_start=$SECONDS
+"${test_cmd[@]}" < /dev/null || test_rc=$?
+_test_elapsed=$(( SECONDS - _test_start ))
+# timeout(1) exits 124 when it kills the command, but a test can also exit 124
+# on its own; only call it a timeout if the limit was actually reached.
+if [[ "$test_rc" -eq 124 && -n "$TEST_TIMEOUT_BIN" && "$_test_elapsed" -ge "$TEST_TIMEOUT_SECS" ]]; then
+    echo -e "  ${RED}❌ Local test suite timed out after ${TEST_TIMEOUT_SECS}s. Any failures printed above are real; the run was cut off before its summary.${NC}"
+    echo "     Retry on a less loaded machine, or raise the limit: PRE_PUSH_TEST_TIMEOUT=<seconds> git push"
+    exit 1
+elif [[ "$test_rc" -ne 0 ]]; then
     echo -e "  ${RED}❌ Local test suite failed. Fix the findings above before pushing.${NC}"
     exit 1
 fi

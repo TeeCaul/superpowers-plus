@@ -141,10 +141,9 @@ _bats_jobs() {
 
 # shellcheck disable=SC2329  # invoked indirectly via run_suite
 # Bats targets for this run. Normally the whole test/ directory; in fast mode
-# (which the pre-push hook runs under `timeout 300`) the files declared in
+# (which the pre-push hook runs under a 600s timeout by default) the files declared in
 # test/.slow-bats are excluded. A single test that outruns the gate's budget
-# kills the suite mid-stream with no `not ok` line, so the gate fails
-# deterministically and looks like a hang rather than a timeout.
+# kills the suite mid-stream, and the gate fails with a timeout every time.
 _bats_targets() {
     local slow_list="$REPO_ROOT/test/.slow-bats"
     if [[ "$RUN_FAST" -ne 1 || ! -f "$slow_list" ]]; then
@@ -319,7 +318,7 @@ run_node_tests() {
 # without them a skill edit that breaks a budget passes every local gate and
 # fails only on Linux CI, ~9 minutes later (PR #1326, 2026-09-21). The rest of
 # tests/ stays out of --fast: it is ~140 s even in parallel, and pre-push
-# Gate 1 runs under `timeout 300`.
+# Gate 1 runs under a 600s timeout by default (PRE_PUSH_TEST_TIMEOUT).
 # shellcheck disable=SC2329  # invoked indirectly via run_suite
 run_bats_skill_guards() {
     command -v bats >/dev/null 2>&1 || { echo "⚠️  bats not installed; skipping"; return 0; }
@@ -344,7 +343,7 @@ run_harsh_review() {
 [[ "$RUN_HARSH"      -eq 1 ]] && run_suite "harsh-review.sh" run_harsh_review
 [[ "$RUN_BATS"       -eq 1 ]] && run_suite "bats test/"      run_bats
 [[ "$RUN_NODE"       -eq 1 ]] && run_suite "node test/*"     run_node_tests
-# Not in --fast: the pre-push gate runs under `timeout 300` and tests/ is slow.
+# Not in --fast: the pre-push gate runs under a timeout (600s default) and tests/ is slow.
 # CI runs it via ci-bats-discovery.sh regardless.
 [[ "$RUN_BATS" -eq 1 && "$RUN_FAST" -ne 1 ]] && run_suite "bats tests/ (serial)" run_bats_tests_dir
 [[ "$RUN_BATS" -eq 1 && "$RUN_FAST" -eq 1 ]] && run_suite "bats tests/engineering (skill guards)" run_bats_skill_guards
