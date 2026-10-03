@@ -137,7 +137,11 @@ is_our_zip() {
     [[ "$line" == "$base/SKILL.md" ]] && has_skill=1
   done <<< "$listing"
   [[ $has_skill -eq 1 ]] || return 1
-  unzip -p "$1" "$base/SKILL.md" 2>/dev/null | grep -q "$PACKAGED_MARKER"
+  # Capture, then match: piping into grep -q under pipefail can fail on a
+  # match, because grep exits early and unzip dies of SIGPIPE.
+  local body
+  body="$(unzip -p "$1" "$base/SKILL.md" 2>/dev/null)" || return 1
+  [[ "$body" == *"$PACKAGED_MARKER"* ]]
 }
 
 # ── OUTDIR must be new, empty, or hold only ZIPs this script made ─────────────

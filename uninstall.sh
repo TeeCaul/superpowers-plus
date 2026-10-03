@@ -407,7 +407,9 @@ _is_packaged_skill_zip() {
         [[ "$line" == "$base/SKILL.md" ]] && has_skill=1
     done <<< "$listing"
     [[ $has_skill -eq 1 ]] || return 1
-    unzip -p "$1" "$base/SKILL.md" 2>/dev/null | grep -q "Packaged for Claude Desktop Chat and Cowork"
+    local body
+    body="$(unzip -p "$1" "$base/SKILL.md" 2>/dev/null)" || return 1
+    [[ "$body" == *"Packaged for Claude Desktop Chat and Cowork"* ]]
 }
 
 main() {
