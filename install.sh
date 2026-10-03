@@ -132,6 +132,8 @@ HOOK_PARITY_EXIT_CODE=0
 # Augment IDE slash menu: user-level ~/.agents/skills/ (curated subset only — SKILL.md format)
 # Augment discovers skills here regardless of which workspace is open.
 AUGMENT_MENU_DIR="${HOME}/.agents/skills"
+# Claude Desktop Chat/Cowork: upload-ready ZIPs (claude.ai has no upload API)
+CLAUDE_DESKTOP_ZIP_DIR="${HOME}/superpowers-plus-claude-desktop"
 
 # Options (set before sourcing modules so they can read these)
 FORCE=false
@@ -545,6 +547,10 @@ print_summary() {
         echo "                      (curated /sp-* commands)"
         echo ""
     fi
+    echo "  Claude Desktop:    Code tab uses the Claude Code install above"
+    echo "                     Chat/Cowork: upload ZIPs from $CLAUDE_DESKTOP_ZIP_DIR"
+    echo "                     at https://claude.ai/customize/skills"
+    echo ""
     echo "Personal skills:"
     # Source of truth for "what this installer just deployed" is the manifest
     # written by install_skills() — using $SKILLS_DIR directly mis-attributes
@@ -682,6 +688,33 @@ install_claude_guardrails() {
     check_hook_parity || HOOK_PARITY_EXIT_CODE=$?
 }
 
+# Build upload-ready ZIPs for the Claude Desktop Chat and Cowork tabs. Those tabs
+# load skills from the user's claude.ai account, not ~/.claude/skills/, and
+# claude.ai has no upload API, so the best the installer can do is keep the
+# ZIPs current and say which ones changed. Never fatal: a Desktop packaging
+# problem must not fail a Claude Code or Augment install.
+package_claude_desktop_skills() {
+    local packager="$SCRIPT_DIR/tools/package-for-claude.sh"
+    [[ -f "$packager" ]] || return 0
+    local _cmd
+    for _cmd in python3 zip unzip; do
+        if ! command -v "$_cmd" >/dev/null 2>&1; then
+            log_info "Claude Desktop ZIPs: skipped ($_cmd not installed)"
+            return 0
+        fi
+    done
+    local out rc=0
+    out="$(bash "$packager" --quiet --output "$CLAUDE_DESKTOP_ZIP_DIR" 2>&1)" || rc=$?
+    if [[ $rc -eq 0 ]]; then
+        log_info "${out##*$'\n'}"
+    else
+        log_warn "Claude Desktop ZIPs not rebuilt (exit $rc). Run: bash tools/package-for-claude.sh"
+        printf '%s\n' "$out" | while IFS= read -r _line; do
+            printf '  output: %s\n' "$_line"
+        done
+    fi
+}
+
 # Check mode — validate prerequisites without installing
 check_prerequisites() {
     log_info "Checking prerequisites for superpowers-plus..."
@@ -789,6 +822,7 @@ main() {
         migrate_consumed_approvals
         install_claude_commands_mirror
         install_claude_guardrails
+        package_claude_desktop_skills
         # Record this ecosystem as the owner of this ~/.codex install.
         write_ecosystem_marker
         print_summary
@@ -840,6 +874,7 @@ main() {
     migrate_consumed_approvals
     install_claude_commands_mirror
     install_claude_guardrails
+    package_claude_desktop_skills
 
     # F5: Clean install-artifact permission drift.
     # install_tools copies to ~/.codex/superpowers-plus/tools/ and sets +x on those

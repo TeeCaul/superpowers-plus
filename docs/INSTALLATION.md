@@ -14,7 +14,8 @@ Return to the [README](../README.md).
 - **Augment Agent only:** one-liner bootstrap for Ubuntu / Debian / WSL
 - **Claude Code:** use `install.sh` for complete setup, or `/plugin install` for plugin-only mode
 - **Codex / OpenCode:** use the platform-specific instructions below
-- **Claude Desktop or another MCP client:** do the core install first, then add the optional MCP server
+- **Claude Desktop:** the core install covers the Code tab. For the Chat and Cowork tabs, upload the ZIPs it builds; see [Claude Desktop](../README.md#claude-desktop)
+- **Another MCP client:** do the core install first, then add the optional MCP server
 
 ### macOS / Linux / WSL
 
@@ -87,7 +88,7 @@ If you're using the install paths above without an MCP client, you can skip this
 > **Security scope:** The MCP server communicates over stdio, not a network socket (see the `StdioServerTransport` import in `mcp/superpowers-mcp.js`); there is no port or bind address at all. It has no authentication of its own, so anything able to spawn the process gets the same file-read access it has.
 
 1. `cd mcp && npm install`, then review `mcp/package-lock.json` for unexpected transitive dependencies before running in sensitive environments
-2. Add this to your MCP client configuration. Example for Claude Code (`~/.claude/settings.json`); other MCP clients such as Claude Desktop use their own config file with the same `mcpServers` block. Replace `/absolute/path/to/superpowers-plus` with the absolute path from `pwd` in your checkout (no trailing slash, no `~/` shorthand; use the full path):
+2. Add this to your MCP client configuration. Example for Claude Code (`~/.claude/settings.json`). Claude Desktop uses the same `mcpServers` block in `claude_desktop_config.json`: `~/Library/Application Support/Claude/` on macOS, `%APPDATA%\Claude\` on Windows. A server added there shows up in both the Chat tab and local Code tab sessions. Other MCP clients use their own config file with the same block. Replace `/absolute/path/to/superpowers-plus` with the absolute path from `pwd` in your checkout (no trailing slash, no `~/` shorthand; use the full path):
 
    ```json
    {

@@ -33,6 +33,28 @@ Then tell your assistant what you're doing:
 
 Full install options (Claude Code plugin, Codex, OpenCode, MCP server, Windows/WSL) are in [docs/INSTALLATION.md](docs/INSTALLATION.md).
 
+## Claude Desktop
+
+The Claude Desktop app has three tabs. superpowers-plus works in all of them, and the same `bash install.sh` sets up each one.
+
+| Tab | What you get | Extra steps |
+|-----|--------------|-------------|
+| **Code** | Everything Claude Code gets: all 124 skills, lifecycle hooks, approval guardrails, and commit and push gates | None. The Code tab runs the same engine as the Claude Code CLI and reads the same `~/.claude/` skills, hooks, and settings |
+| **Chat** and **Cowork** | 11 standalone skills, including brainstorming, debate, plan writing, and AI slop detection and rewriting | Upload the ZIPs that `install.sh` builds (below) |
+| **Chat** and **Code** (optional) | All 124 skills as tools: `find_skills`, `use_skill`, `match_skills` | Add the [MCP server](docs/INSTALLATION.md#mcp-server-optional) to `claude_desktop_config.json` |
+
+**Code tab.** Nothing to configure. Local sessions load `~/.claude/skills/` and the hooks in `~/.claude/settings.json`, and git runs the commit and push gates no matter which app made the commit. You can also run `/desktop` in a terminal session to move it into the app. Two exceptions: cloud sessions don't read `~/.claude/`, and an SSH session reads the remote machine's copy, so run `install.sh` on that machine too.
+
+**Chat and Cowork.** These tabs load skills from your claude.ai account instead of `~/.claude/skills/`. claude.ai has no upload API, so the upload itself is the one manual step:
+
+1. Run `bash install.sh` (or `bash tools/package-for-claude.sh` on its own). It writes one ZIP per skill to `~/superpowers-plus-claude-desktop/`.
+2. In the Desktop app, open **Customize** in the sidebar (or go to [claude.ai/customize/skills](https://claude.ai/customize/skills)) and upload each `.zip`.
+3. Turn each skill on.
+
+Uploaded skills follow your claude.ai account into Chat, Cowork, cloud sessions, and Claude Code sessions signed in with that account. The packager applies claude.ai's upload rules for you: it names the file `SKILL.md`, includes each skill's reference files, and keeps only the six frontmatter fields claude.ai accepts, because any other field makes the upload fail. After `bash install.sh --upgrade`, the output says how many ZIPs changed, and only those need uploading again. When the same skill is installed locally and uploaded, Claude Code uses the local copy and keeps the uploaded one available as `/anthropic-skills:<name>`.
+
+Only 11 skills are packaged because the others call other skills, run scripts from this repo, or depend on hooks and git gates that a Chat conversation doesn't have. The list is in [`tools/claude-desktop-skills.json`](tools/claude-desktop-skills.json).
+
 ## What Changes
 
 ```text
@@ -94,7 +116,8 @@ All 124 skills: [docs/SKILLS.md](docs/SKILLS.md). How they connect: [docs/SKILL_
 | **Augment Code** | Full: skills, routing, commit and push gates, MCP integrations |
 | **Codex, OpenCode** | Skills, via the [platform install guides](docs/INSTALLATION.md). Git gates work with any assistant because git runs them; Claude Code lifecycle hooks do not apply |
 | **Gemini CLI** | No installer. `GEMINI.md` points Gemini at the repo's agent guidance |
-| **MCP clients** (e.g. Claude Desktop) | Skills exposed as `find_skills`, `use_skill`, and `match_skills` tools |
+| **Claude Desktop** | Code tab: same as Claude Code. Chat and Cowork: 11 uploadable skills, plus all skills through the MCP server. See [Claude Desktop](#claude-desktop) |
+| **Other MCP clients** | Skills exposed as `find_skills`, `use_skill`, and `match_skills` tools |
 
 ## What's Included
 
