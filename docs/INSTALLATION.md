@@ -14,7 +14,8 @@ Return to the [README](../README.md).
 - **Augment Agent only:** one-liner bootstrap for Ubuntu / Debian / WSL
 - **Claude Code:** use `install.sh` for complete setup, or `/plugin install` for plugin-only mode
 - **Codex / OpenCode:** use the platform-specific instructions below
-- **Claude Desktop or another MCP client:** do the core install first, then add the optional MCP server
+- **Claude Desktop:** the core install covers the Code tab and builds ZIPs to upload for the Chat and Cowork tabs; see [Claude Desktop](../README.md#claude-desktop)
+- **Another MCP client:** do the core install first, then add the optional MCP server
 
 ### macOS / Linux / WSL
 
@@ -87,7 +88,7 @@ If you're using the install paths above without an MCP client, you can skip this
 > **Security scope:** The MCP server communicates over stdio, not a network socket (see the `StdioServerTransport` import in `mcp/superpowers-mcp.js`); there is no port or bind address at all. It has no authentication of its own, so anything able to spawn the process gets the same file-read access it has.
 
 1. `cd mcp && npm install`, then review `mcp/package-lock.json` for unexpected transitive dependencies before running in sensitive environments
-2. Add this to your MCP client configuration. Example for Claude Code (`~/.claude/settings.json`); other MCP clients such as Claude Desktop use their own config file with the same `mcpServers` block. Replace `/absolute/path/to/superpowers-plus` with the absolute path from `pwd` in your checkout (no trailing slash, no `~/` shorthand; use the full path):
+2. Add this to your MCP client configuration. For Claude Code, run `claude mcp add` or put the block below in `~/.claude.json` (user scope) or a project's `.mcp.json`. Claude Code does not read `mcpServers` from `~/.claude/settings.json`. For Claude Desktop, put the same block in `claude_desktop_config.json`: `~/Library/Application Support/Claude/` on macOS, `%APPDATA%\Claude\` on Windows (for Linux, see [Claude Desktop on Linux](https://code.claude.com/docs/en/desktop-linux)). A server added there shows up in the Chat tab and in local Code tab sessions, but not in Cowork. The Code tab already has every skill natively, so the server mainly helps Chat. Other MCP clients use their own config file with the same block. Replace `/absolute/path/to/superpowers-plus` with the absolute path from `pwd` in your checkout (no trailing slash, no `~/` shorthand; use the full path):
 
    ```json
    {
