@@ -7,7 +7,7 @@
 # upload on any other key, so the packaged SKILL.md keeps only those. The source
 # skill.md in this repo is never modified. The packaged copy also gets a short
 # note telling Claude to skip steps that need this repo's scripts, since Chat
-# and Cowork have no shell or checkout.
+# and Cowork don't have a copy of the repo.
 # Rules: https://code.claude.com/docs/en/skills#using-skill-frontmatter-outside-claude-code
 #
 # Usage: ./tools/package-for-claude.sh [--output DIR] [--manifest FILE] [--keep] [--quiet]
@@ -183,8 +183,8 @@ if len(desc) > 1024:
 if "<" in desc or ">" in desc:
     sys.exit(f"ERROR: {src}: description contains < or >, which uploads reject")
 kept = [l for k in order if k in ALLOWED for l in blocks[k]]
-NOTE = ("\n> **Packaged for Claude Desktop Chat and Cowork.** These tabs have no shell and no "
-        "superpowers-plus checkout. Skip any step that runs a repo script (`tools/...`, "
+NOTE = ("\n> **Packaged for Claude Desktop Chat and Cowork.** These tabs have no superpowers-plus "
+        "checkout and no access to your machine's shell. Skip any step that runs a repo script (`tools/...`, "
         "`~/.codex/...`) or calls a skill you don't have, say in one line that you skipped it, "
         "and carry out the rest.\n")
 open(f"{dest}/SKILL.md", "w", encoding="utf-8").write("---\n" + "\n".join(kept) + "\n---\n" + NOTE + text[m.end():])
