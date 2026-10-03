@@ -188,6 +188,46 @@ check('rewritten envelope file ends with exactly one trailing newline', (() => {
     check('match: anchoring still rejects extra content', pe('ok then more\n', 0, { type: 'match', value: '^ok$' }).status === 'falsified');
 }
 
+// --- A non-zero exit whose command text mentions "timeout" is NOT a timeout ---
+// execSync's error message embeds the command text, so a message regex once
+// misreported absence checks like this one as a 30s timeout.
+r = run(envelope([finding({ command: 'grep -n timeout /dev/null', expectation: { type: 'absent' } })]));
+check('absent check for "timeout" (grep exits 1, no output): verified, not a timeout',
+    r.status === 0 && r.readBack().verifier_result.claims_verified === 1);
+r = run(envelope([finding({ command: 'echo "timed out" >/dev/null; exit 3', expectation: { type: 'exit_code', value: 3 } })]));
+check('non-zero exit with "timed out" in the command: exit_code is checked normally',
+    r.status === 0 && r.readBack().verifier_result.claims_verified === 1);
+
+// --- A command killed by its own signal is an error, not a timeout ---
+r = run(envelope([finding({ command: 'kill -TERM $$', expectation: { type: 'exit_code', value: 0 } })]));
+check('self-signalled command: not verified, not reported as a timeout',
+    r.readBack().verifier_result.claims_verified === 0
+    && !/exceeded \d+ms timeout/.test(JSON.stringify(r.readBack()))
+    && /command killed by signal SIGTERM/.test(JSON.stringify(r.readBack())));
+
+// --- A real timeout is still caught, and reported as a timeout ---
+{
+    const prev = process.env.VERIFIER_TIMEOUT_MS;
+    process.env.VERIFIER_TIMEOUT_MS = '500';
+    const detailOf = (rr) => JSON.stringify(rr.readBack());
+    r = run(envelope([finding({ command: 'sleep 3', expectation: { type: 'exit_code', value: 0 } })]));
+    let vr = r.readBack().verifier_result;
+    check('real timeout (sleep 3 vs 500ms limit): not verified, reported as a timeout',
+        vr.claims_verified === 0 && vr.claims_unverifiable === 1 && /exceeded 500ms timeout/.test(detailOf(r)));
+    // A child that ignores SIGTERM can exit 0 after the timeout fires; it must still not verify.
+    r = run(envelope([finding({ command: "trap '' TERM; sleep 2", expectation: { type: 'exit_code', value: 0 } })]));
+    vr = r.readBack().verifier_result;
+    check('timeout of a SIGTERM-ignoring command: not verified',
+        vr.claims_verified === 0 && /exceeded 500ms timeout/.test(detailOf(r)));
+    if (prev === undefined) delete process.env.VERIFIER_TIMEOUT_MS; else process.env.VERIFIER_TIMEOUT_MS = prev;
+}
+
+// --- argv mode: a process killed by a signal must not count as exit 0 ---
+r = run(envelope([{ claim: 'argv signal', reviewer: 'TestReviewer', dimension: 'correctness', severity: 'Minor',
+    evidence: { argv: ['sh', '-c', 'kill -TERM $$'], expectation: { type: 'exit_code', value: 0 }, verifiable: true } }]));
+check('argv command killed by a signal: not verified against exit_code 0',
+    r.readBack().verifier_result.claims_verified === 0 && /killed by signal/.test(JSON.stringify(r.readBack())));
+
 // Cleanup
 try { fs.rmSync(TMP, { recursive: true }); } catch (_) {}
 
