@@ -520,7 +520,7 @@ EOF
 
 
 @test "pre-commit reads .agent-gates from HEAD when it is staged (cannot self-disable)" {
-    # Critical regression: staging .agent-gates with SKIP_REVIEW_TOKEN=true should NOT
+    # Critical regression: staged .agent-gates with SKIP_REVIEW_TOKEN=true should NOT
     # disable the token gate because the hook reads from HEAD, not the staged version.
     local fixture
     fixture=$(_create_fixture_repo)

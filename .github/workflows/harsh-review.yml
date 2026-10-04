@@ -2,9 +2,9 @@ name: Harsh Review
 
 on:
   pull_request:
-    branches: [main, staging, dev]
+    branches: [main, dev]
   push:
-    branches: [main, staging, dev]
+    branches: [main, dev]
 
 jobs:
   quality-checks:

@@ -155,11 +155,11 @@ if [[ "$BRANCH" == "$TARGET_BRANCH" ]]; then
   exit 1
 fi
 # ship.sh is a FEATURE-branch tool: it pushes the current branch and finishes
-# with `gh pr merge --merge --delete-branch`. Run from dev/staging/main that
+# with `gh pr merge --merge --delete-branch`. Run from dev/main that
 # --delete-branch targets a canonical long-lived branch. Branch protection is
 # the only thing that refuses the deletion today -- do not rely on it.
 case "$BRANCH" in
-  dev|staging|main)
+  dev|main)
     echo "ERROR: refusing to ship FROM canonical branch '$BRANCH'." >&2
     echo "  ship.sh merges with --delete-branch, which would target '$BRANCH'." >&2
     echo "  For dev->main promotions use:" >&2

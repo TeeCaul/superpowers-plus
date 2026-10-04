@@ -16,7 +16,7 @@
 #   1. tools/pre-push-test-gate.sh              -- local fast test suite (tools/test-all.sh --fast)
 #   2. tools/pre-push-code-review-gate.sh       -- code-review-battery sentinel (excludes skills/*.md)
 #   3. tools/pre-push-ip-scan-gate.sh           -- proprietary IP scan (public remotes only)
-#   4. tools/pre-push-branch-flow-gate.sh       -- branch-flow sentinel (dev|staging|main only)
+#   4. tools/pre-push-branch-flow-gate.sh       -- branch-flow sentinel (dev|main only)
 #   5. tools/pre-push-phr-gate.sh               -- PHR sentinel (design .md only, excludes skills/*.md)
 #   6. tools/pre-push-llm-skill-review-gate.sh  -- llm-skill-review sentinel (skills/*.md ONLY --
 #                                                   supersedes gates 2 and 5 for this file class)

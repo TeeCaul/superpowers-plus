@@ -14,7 +14,7 @@ decision.
 | Anti-leak literal scrub | YES | Which patterns your test fixtures actually need |
 | Stop on identical opaque errors | YES | What's "identical" in a specific tool's output |
 | Delete source branch on merge | YES (advisory) | Whether long-lived branches use a different lifecycle |
-| Which target branch | NO | team A uses dev/staging/main; legacy uses release/<v> |
+| Which target branch | NO | team A uses dev/main; legacy uses release/<v> |
 | Promotion sequence | NO | Per-team flow docs |
 | Hotfix lane shape | NO | Each team's incident-response procedure |
 
@@ -23,7 +23,7 @@ decision.
 ### team A (modern) (modern flow)
 
 ```text
-feat/* off dev --MR--> dev --QA--> staging --QA--> main
+feat/* off dev --MR--> dev --QA--> main
 ```
 
 team A's own flow doc is authoritative for source/target pairings.
@@ -114,17 +114,17 @@ Source branches accumulate. The network graph fills.
 
 ### F9. Stale `.branch-flow-cleared` sentinel after additional commits
 
-Pre-push Gate 3 pins the sentinel to a specific SHA. Any commit (including `--amend`, `--fixup`, `rebase -i`) after running the preflight invalidates the sentinel; the next push to dev/staging/main fails with `branch-flow sentinel SHA != pushed SHA. Branch tip moved since preflight.`
+Pre-push Gate 3 pins the sentinel to a specific SHA. Any commit (including `--amend`, `--fixup`, `rebase -i`) after running the preflight invalidates the sentinel; the next push to dev/main fails with `branch-flow sentinel SHA != pushed SHA. Branch tip moved since preflight.`
 **Fix:** Re-run `tools/branch-flow-preflight.sh <source> <target>` after every commit immediately before pushing. In a fast-iteration debug loop, defer running the preflight until you are ready to push the final commit.
 
 ### F10. Preflight script missing in this clone
 
 If `tools/branch-flow-preflight.sh` is not installed (fresh clone, partial sync, or a downstream consumer), the skill's "Mandatory Preflight" instructions point at a phantom command. Pre-push Gate 3 detects this and skips with `(skipped - tools/branch-flow-preflight.sh not present in this repo)`.
-**Fix:** Run `tools/install-hooks.sh` (or the equivalent install path for your platform) to materialize the script and the hook. Until then, pushes to dev/staging/main land without the gate firing -- relying entirely on PR review.
+**Fix:** Run `tools/install-hooks.sh` (or the equivalent install path for your platform) to materialize the script and the hook. Until then, pushes to dev/main land without the gate firing -- relying entirely on PR review.
 
 ### F11. Cascade-chasing forward-ports after a promotion
 
-After a successful dev -> main promotion, the standard cleanup is to forward-port main back to dev so the next feature branch starts from an aligned base. **Do exactly one forward-port PR (`main -> dev`) and STOP.** (Repos that keep a third tier such as staging forward-port to it too: one PR per downstream branch, then stop.)
+After a successful dev -> main promotion, the standard cleanup is to forward-port main back to dev so the next feature branch starts from an aligned base. **Do exactly one forward-port PR (`main -> dev`) and STOP.**
 
 **Anti-pattern:** opening additional forward-ports after that -- e.g. a PR that merges dev's new forward-port merge-commit back into main -- creates an infinite cascade. Each forward-port adds a merge commit to the destination, which the source is then "behind" on; chasing that gap with another forward-port immediately creates the next gap. This is the "13-PR network-graph disgrace" pattern.
 
@@ -192,7 +192,7 @@ tools/branch-flow-preflight.sh --identical-check "$ERR1" "$ERR2"
 
 ## What This Reference DOES NOT Cover
 
-- team A (modern)'s dev/staging/main promotion sequence (team A's flow doc)
+- team A (modern)'s dev/main promotion sequence (team A's flow doc)
 - Legacy waterfall release-branch cut-and-ship procedure (legacy docs)
 - Hotfix paired forward-port (team A (modern) only)
 - Bot-landing forward-port SLA (team-specific)

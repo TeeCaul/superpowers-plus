@@ -15,7 +15,6 @@ setup() {
     git commit -q -m init
     git branch develop
     git branch dev
-    git branch staging
     git branch feat/foo
     git branch fix/bar
     git branch chore/cleanup
@@ -101,15 +100,15 @@ teardown() {
 # --- Escape hatches ---
 
 @test "escape: GIT_BASE_OVERRIDE=1 suppresses base advisory" {
-    # Move dev forward, then branch off staging (would normally trigger advisory)
+    # Move dev forward, then branch off main (would normally trigger advisory)
     git checkout -q dev
     git commit -q --allow-empty -m "dev moves"
-    git checkout -q staging
-    git commit -q --allow-empty -m "staging moves"
-    git push -q origin dev staging 2>/dev/null || true
+    git checkout -q main
+    git commit -q --allow-empty -m "main moves"
+    git push -q origin dev main 2>/dev/null || true
     git fetch -q origin
-    git checkout -q -b feat/off-staging staging
-    GIT_BASE_OVERRIDE=1 run ./preflight.sh feat/off-staging dev
+    git checkout -q -b feat/off-main main
+    GIT_BASE_OVERRIDE=1 run ./preflight.sh feat/off-main dev
     [ "$status" -eq 0 ]
     [[ "$output" == *"GIT_BASE_OVERRIDE=1"* ]] || [[ "$output" == *"suppressed"* ]]
 }
@@ -164,15 +163,15 @@ teardown() {
     [[ "$output" == *"base aligned"* ]]
 }
 
-@test "base-alignment: feat off staging when target=dev -> advisory exit 0" {
+@test "base-alignment: feat off main when target=dev -> advisory exit 0" {
     git checkout -q dev
     git commit -q --allow-empty -m "dev moves"
-    git checkout -q staging
-    git commit -q --allow-empty -m "staging moves"
-    git push -q origin dev staging 2>/dev/null || true
+    git checkout -q main
+    git commit -q --allow-empty -m "main moves"
+    git push -q origin dev main 2>/dev/null || true
     git fetch -q origin
-    git checkout -q -b feat/off-staging staging
-    run ./preflight.sh feat/off-staging dev
+    git checkout -q -b feat/off-main main
+    run ./preflight.sh feat/off-main dev
     [ "$status" -eq 0 ]  # advisory, never blocks
     # Either base-advisory fires OR it falls through; either way exit 0
 }

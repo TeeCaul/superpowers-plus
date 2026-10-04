@@ -103,7 +103,7 @@ post-checkout fires once when the branch is created (before any work is invested
 |---|---|
 | Just-branched feature off dev | Advisory should be quiet (or PASS) |
 | Forgot to fetch + dev moved -> stale-but-correct base | Advisory says "rebase recommended"; you can ignore for now |
-| Cut from staging because of an integration test | Heed the advisory and rebase OR acknowledge with `touch .git/base-advisory-ack-<branch>` |
+| Cut from a stale integration branch because of an integration test | Heed the advisory and rebase OR acknowledge with `touch .git/base-advisory-ack-<branch>` |
 | P0 hotfix at 3am off main | Use `hotfix/` prefix; advisory exempts |
 | Renaming `-v2` retry to canonical name | Heed and `git branch -m`; recover via amend + force-with-lease |
 ## Failure Modes

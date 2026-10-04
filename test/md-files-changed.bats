@@ -163,7 +163,7 @@ setup() {
 
 @test "md-files-changed: branch's own tracking upstream wins over a same-repo dev guess" {
     # An explicit @{upstream} is a more accurate signal than the generic
-    # dev/staging/main candidate list -- e.g. a branch tracking a shared
+    # dev/main candidate list -- e.g. a branch tracking a shared
     # review branch other than dev. Verify the upstream is tried first.
     git checkout -qb shared-review
     mkdir -p skills/onreview

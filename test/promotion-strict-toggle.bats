@@ -97,16 +97,16 @@ sentinel_file() { echo "$WORK/.strict-toggle-state"; }
 }
 
 @test "disable: happy path writes sentinel and confirms via read-back" {
-    run bash "$SCRIPT" disable staging
+    run bash "$SCRIPT" disable main
     [ "$status" -eq 0 ]
-    [[ "$output" == *"confirmed on staging"* ]]
+    [[ "$output" == *"confirmed on main"* ]]
     [ -f "$(sentinel_file)" ]
-    grep -q "^v1|staging|" "$(sentinel_file)"
+    grep -q "^v1|main|" "$(sentinel_file)"
 }
 
 @test "disable: read-back mismatch aborts WITHOUT writing sentinel" {
     export FAKE_GH_FORCE_READBACK="true"
-    run bash "$SCRIPT" disable staging
+    run bash "$SCRIPT" disable main
     [ "$status" -eq 1 ]
     [[ "$output" == *"NOT written"* ]]
     [ ! -f "$(sentinel_file)" ]
@@ -114,29 +114,29 @@ sentinel_file() { echo "$WORK/.strict-toggle-state"; }
 
 @test "disable: PATCH itself failing aborts before any sentinel write" {
     export FAKE_GH_PATCH_EXIT_CODE="1"
-    run bash "$SCRIPT" disable staging
+    run bash "$SCRIPT" disable main
     [ "$status" -ne 0 ]
     [ ! -f "$(sentinel_file)" ]
 }
 
 @test "restore: happy path clears sentinel and confirms via read-back" {
-    bash "$SCRIPT" disable staging
+    bash "$SCRIPT" disable main
     [ -f "$(sentinel_file)" ]
-    run bash "$SCRIPT" restore staging
+    run bash "$SCRIPT" restore main
     [ "$status" -eq 0 ]
-    [[ "$output" == *"confirmed on staging"* ]]
+    [[ "$output" == *"confirmed on main"* ]]
     [ ! -f "$(sentinel_file)" ]
 }
 
 @test "restore: read-back mismatch does NOT clear the sentinel" {
-    bash "$SCRIPT" disable staging
+    bash "$SCRIPT" disable main
     [ -f "$(sentinel_file)" ]
     export FAKE_GH_FORCE_READBACK="false"
-    run bash "$SCRIPT" restore staging
+    run bash "$SCRIPT" restore main
     [ "$status" -eq 1 ]
     [[ "$output" == *"NOT cleared"* ]]
     [ -f "$(sentinel_file)" ]
-    grep -q "^v1|staging|" "$(sentinel_file)"
+    grep -q "^v1|main|" "$(sentinel_file)"
 }
 
 @test "status: no sentinel file means no active entries, exit 0" {
@@ -146,52 +146,52 @@ sentinel_file() { echo "$WORK/.strict-toggle-state"; }
 }
 
 @test "status: fresh entry (within TTL) reports active, exit 0" {
-    bash "$SCRIPT" disable staging
+    bash "$SCRIPT" disable main
     run bash "$SCRIPT" status
     [ "$status" -eq 0 ]
-    [[ "$output" == *"active: staging"* ]]
+    [[ "$output" == *"active: main"* ]]
 }
 
 @test "status: entry older than TTL reports STALE and exits 1" {
     now="$(date -u +%s)"
     old=$(( now - 3600 ))
-    echo "v1|staging|bordenet/superpowers-plus|${old}" > "$(sentinel_file)"
+    echo "v1|main|bordenet/superpowers-plus|${old}" > "$(sentinel_file)"
     run env PROMOTION_STRICT_TOGGLE_TTL_SECONDS=1800 bash "$SCRIPT" status
     [ "$status" -eq 1 ]
-    [[ "$output" == *"STALE: staging"* ]]
+    [[ "$output" == *"STALE: main"* ]]
     [[ "$output" == *"restore immediately"* ]]
 }
 
 @test "status: TTL is configurable via env var" {
     now="$(date -u +%s)"
     old=$(( now - 100 ))
-    echo "v1|staging|bordenet/superpowers-plus|${old}" > "$(sentinel_file)"
+    echo "v1|main|bordenet/superpowers-plus|${old}" > "$(sentinel_file)"
     run env PROMOTION_STRICT_TOGGLE_TTL_SECONDS=50 bash "$SCRIPT" status
     [ "$status" -eq 1 ]
-    [[ "$output" == *"STALE: staging"* ]]
+    [[ "$output" == *"STALE: main"* ]]
 }
 
 @test "two branches are tracked independently: restoring one leaves the other active" {
-    bash "$SCRIPT" disable staging
+    bash "$SCRIPT" disable main
     bash "$SCRIPT" disable dev
-    grep -q "^v1|staging|" "$(sentinel_file)"
+    grep -q "^v1|main|" "$(sentinel_file)"
     grep -q "^v1|dev|" "$(sentinel_file)"
 
-    run bash "$SCRIPT" restore staging
+    run bash "$SCRIPT" restore main
     [ "$status" -eq 0 ]
-    ! grep -q "^v1|staging|" "$(sentinel_file)"
+    ! grep -q "^v1|main|" "$(sentinel_file)"
     grep -q "^v1|dev|" "$(sentinel_file)"
 
     run bash "$SCRIPT" status
     [ "$status" -eq 0 ]
     [[ "$output" == *"active: dev"* ]]
-    [[ "$output" != *"staging"* ]]
+    [[ "$output" != *"main"* ]]
 }
 
 @test "disabling the same branch twice replaces the old entry (no duplicate lines)" {
-    bash "$SCRIPT" disable staging
-    bash "$SCRIPT" disable staging
-    count="$(grep -c "^v1|staging|" "$(sentinel_file)")"
+    bash "$SCRIPT" disable main
+    bash "$SCRIPT" disable main
+    count="$(grep -c "^v1|main|" "$(sentinel_file)")"
     [ "$count" -eq 1 ]
 }
 
@@ -211,8 +211,16 @@ sentinel_file() { echo "$WORK/.strict-toggle-state"; }
     [ ! -f "$FAKE_GH_STATE_DIR/strict-develop" ]
 }
 
-@test "disable/restore accept exactly dev, staging, and main" {
-    for b in dev staging main; do
+@test "disable/restore reject the retired staging branch" {
+    run bash "$SCRIPT" disable staging
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"Unsupported branch 'staging'"* ]]
+    run bash "$SCRIPT" restore staging
+    [ "$status" -eq 1 ]
+}
+
+@test "disable/restore accept exactly dev and main" {
+    for b in dev main; do
         run bash "$SCRIPT" disable "$b"
         [ "$status" -eq 0 ]
         run bash "$SCRIPT" restore "$b"
@@ -221,28 +229,28 @@ sentinel_file() { echo "$WORK/.strict-toggle-state"; }
 }
 
 @test "status: a corrupt line (unparsable timestamp) is reported as CORRUPT, not a crash" {
-    echo "v1|staging|bordenet/superpowers-plus|not-a-number" > "$(sentinel_file)"
+    echo "v1|main|bordenet/superpowers-plus|not-a-number" > "$(sentinel_file)"
     run bash "$SCRIPT" status
     [ "$status" -eq 1 ]
-    [[ "$output" == *"CORRUPT: sentinel entry for 'staging'"* ]]
+    [[ "$output" == *"CORRUPT: sentinel entry for 'main'"* ]]
 }
 
 @test "status: a line with extra pipe-delimited fields (read absorbs them into timestamp) is CORRUPT, not a crash" {
     # This is the exact shape produced by a lost-update race: read -r with
     # IFS='|' stuffs any trailing fields into the last variable ($ts), which
     # previously caused an 'unbound variable' crash in the age arithmetic.
-    echo "v1|staging|bordenet/superpowers-plus|123|extra-field" > "$(sentinel_file)"
+    echo "v1|main|bordenet/superpowers-plus|123|extra-field" > "$(sentinel_file)"
     run bash "$SCRIPT" status
     [ "$status" -eq 1 ]
-    [[ "$output" == *"CORRUPT: sentinel entry for 'staging'"* ]]
+    [[ "$output" == *"CORRUPT: sentinel entry for 'main'"* ]]
     [[ "$output" != *"unbound variable"* ]]
 }
 
 @test "status: an empty timestamp field is CORRUPT, not silently treated as 'just disabled'" {
-    echo "v1|staging|bordenet/superpowers-plus|" > "$(sentinel_file)"
+    echo "v1|main|bordenet/superpowers-plus|" > "$(sentinel_file)"
     run bash "$SCRIPT" status
     [ "$status" -eq 1 ]
-    [[ "$output" == *"CORRUPT: sentinel entry for 'staging'"* ]]
+    [[ "$output" == *"CORRUPT: sentinel entry for 'main'"* ]]
 }
 
 @test "status: an empty/invalid branch field is CORRUPT, not misreported as STALE" {
@@ -263,28 +271,26 @@ sentinel_file() { echo "$WORK/.strict-toggle-state"; }
 }
 
 @test "status: --porcelain emits machine-parsable branch|state|age lines" {
-    bash "$SCRIPT" disable staging
+    bash "$SCRIPT" disable main
     run bash "$SCRIPT" status --porcelain
     [ "$status" -eq 0 ]
-    [[ "$output" =~ ^staging\|active\|[0-9]+$ ]]
+    [[ "$output" =~ ^main\|active\|[0-9]+$ ]]
 }
 
 @test "status: --porcelain reports STALE and CORRUPT distinctly" {
     old=$(( $(date -u +%s) - 3600 ))
     {
-      echo "v1|staging|bordenet/superpowers-plus|${old}"
+      echo "v1|main|bordenet/superpowers-plus|${old}"
       echo "v1|dev|bordenet/superpowers-plus|garbage"
     } > "$(sentinel_file)"
     run bash "$SCRIPT" status --porcelain
     [ "$status" -eq 1 ]
-    [[ "$output" == *"staging|STALE|"* ]]
+    [[ "$output" == *"main|STALE|"* ]]
     [[ "$output" == *"dev|CORRUPT|-"* ]]
 }
 
 @test "concurrent disable on two different branches: neither entry is lost (lock prevents lost update)" {
-    bash "$SCRIPT" disable main   # seed an existing entry, matches the real-world race scenario
-
-    bash "$SCRIPT" disable staging &
+    bash "$SCRIPT" disable main &
     pid1=$!
     bash "$SCRIPT" disable dev &
     pid2=$!
@@ -292,14 +298,13 @@ sentinel_file() { echo "$WORK/.strict-toggle-state"; }
     wait "$pid2"
 
     grep -q "^v1|main|" "$(sentinel_file)"
-    grep -q "^v1|staging|" "$(sentinel_file)"
     grep -q "^v1|dev|" "$(sentinel_file)"
-    [ "$(grep -c '^v1|' "$(sentinel_file)")" -eq 3 ]
+    [ "$(grep -c '^v1|' "$(sentinel_file)")" -eq 2 ]
 }
 
 @test "a stale lock directory does not deadlock forever (times out with an actionable message)" {
     mkdir -p "$WORK/.strict-toggle-state.lock"
-    run timeout 15 bash "$SCRIPT" disable staging
+    run timeout 15 bash "$SCRIPT" disable main
     [ "$status" -eq 1 ]
     [[ "$output" == *"Could not acquire sentinel lock"* ]]
     rmdir "$WORK/.strict-toggle-state.lock"
