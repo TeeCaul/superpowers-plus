@@ -190,7 +190,7 @@ override, `REQUIRE_DISPOSITION` truthy/`0`, and non-integer / overflow
   case.
 - **Outcome is not observable at pre-commit time.** §1's goal (less accretion)
   has no direct signal.
-  - **Owner:** the engineer running the `staging → main` batch review
+  - **Owner:** the engineer running the `dev → main` batch review
     (`AGENTS.md` §"Git Workflow" — "batch review approval" — and
     `merge-authorization-gate`). No new cadence.
   - **What to pull:** the disposition-token mix from merged

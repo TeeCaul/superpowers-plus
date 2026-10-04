@@ -2,7 +2,7 @@
 # -----------------------------------------------------------------------------
 # Script: promotion-strict-toggle.sh
 # PURPOSE: Safe wrapper for temporarily disabling required_status_checks.strict
-#          on dev/staging/main during a promotion PR stuck on BEHIND (see
+#          on dev/main during a promotion PR stuck on BEHIND (see
 #          .ai-guidance/promotion-strict-behind-runbook.md for the full
 #          symptom/root-cause/fix writeup this script implements).
 #
@@ -18,7 +18,7 @@
 #          tools/promotion-strict-toggle.sh restore <branch>
 #          tools/promotion-strict-toggle.sh status [--porcelain]
 #
-#          <branch> must be one of: dev, staging, main (enforced -- this
+#          <branch> must be one of: dev, main (enforced -- this
 #          script only ever operates on this repo's three promotion branches).
 #
 # EXIT:    disable/restore: 0 = confirmed via read-back, 1 = PATCH sent but
@@ -57,11 +57,11 @@ Usage: tools/promotion-strict-toggle.sh disable <branch>
   disable <branch>   Set required_status_checks.strict=false on <branch>,
                       verify via read-back, write a timestamped sentinel.
                       Refuses to write the sentinel if read-back doesn't
-                      confirm false. <branch> must be dev, staging, or main.
+                      confirm false. <branch> must be dev or main.
   restore <branch>    Set strict=true on <branch>, verify via read-back,
                       remove the sentinel entry for <branch>. Refuses to
                       clear the sentinel if read-back doesn't confirm true.
-                      <branch> must be dev, staging, or main.
+                      <branch> must be dev or main.
   status              List active (disabled) entries; flag any older than
                       PROMOTION_STRICT_TOGGLE_TTL_SECONDS (default 1800 = 30
                       min) as STALE, and any entry with an unparsable
@@ -78,9 +78,9 @@ EOF
 
 validate_branch() {
   case "$1" in
-    dev|staging|main) return 0 ;;
+    dev|main) return 0 ;;
     *)
-      echo "❌ Unsupported branch '$1' -- this script only operates on dev, staging, or main." >&2
+      echo "❌ Unsupported branch '$1' -- this script only operates on dev or main." >&2
       exit 1
       ;;
   esac
@@ -115,7 +115,7 @@ _lock_release() {
 trap _lock_release EXIT
 
 # Sentinel entries are plain lines "v1|<branch>|<repo>|<epoch>". Since
-# <branch> is allowlisted to dev/staging/main (validate_branch above), it
+# <branch> is allowlisted to dev/main (validate_branch above), it
 # can never contain a regex metacharacter, so the unescaped `grep` pattern
 # below is safe -- no need for -F/escaping.
 write_sentinel_entry() {
@@ -197,11 +197,11 @@ cmd_status() {
   while IFS='|' read -r version branch _repo ts; do
     [[ "$version" == "v1" ]] || continue
 
-    # A real disable call only ever writes dev/staging/main (validate_branch
+    # A real disable call only ever writes dev/main (validate_branch
     # gates it). A branch field outside that set can only mean the sentinel
     # was corrupted/hand-edited -- report it as CORRUPT, not as a (possibly
     # blank-named) STALE branch.
-    if [[ ! "$branch" =~ ^(dev|staging|main)$ ]]; then
+    if [[ ! "$branch" =~ ^(dev|main)$ ]]; then
       if (( porcelain )); then
         echo "${branch:-<empty>}|CORRUPT|-"
       else

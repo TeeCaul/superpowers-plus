@@ -93,7 +93,7 @@ If `git log` errors rather than producing empty output, the remote ref does not 
 **Why this step exists:** A prior production incident occurred when a branch was cut before a revert landed on `main`. No branch-base check was run before pushing. Conflicts appeared only in the remote MR diff, requiring multi-session destructive rebasing and a lost typecheck that left a broken build in CI.
 ### Step 2: Determine Base Branch
 Prefer the branch's own tracking upstream, then this repo's actual workflow
-base (`dev`), then `staging`/`main`/`master` as later fallbacks -- falling
+base (`dev`), then `main`/`master` as later fallbacks -- falling
 back straight to `main` first (as an earlier version of this step did) picks
 a base that can be many commits behind `dev` on repos where `dev` is the
 real integration branch, producing a wrong "what changed" diff. The exact
@@ -105,7 +105,7 @@ but remote-qualified superset used by the pre-push hook itself).
 
 ```bash
 tracking="$(git rev-parse --abbrev-ref '@{upstream}' 2>/dev/null || true)"
-for candidate in "$tracking" origin/dev dev origin/staging staging origin/main main origin/master master; do
+for candidate in "$tracking" origin/dev dev origin/main main origin/master master; do
     [[ -n "$candidate" ]] || continue
     git rev-parse --verify "$candidate" >/dev/null 2>&1 || continue
     if merge_base=$(git merge-base HEAD "$candidate" 2>/dev/null); then
@@ -115,7 +115,7 @@ for candidate in "$tracking" origin/dev dev origin/staging staging origin/main m
 done
 ```
 
-If any candidate returns a SHA, use that branch as the base. If all fail, the branch has no recognizable integration ancestor — surface this explicitly: "Could not determine base branch automatically (no tracking/dev/staging/main/master ancestor found). What branch did this work split from?"
+If any candidate returns a SHA, use that branch as the base. If all fail, the branch has no recognizable integration ancestor — surface this explicitly: "Could not determine base branch automatically (no tracking/dev/main/master ancestor found). What branch did this work split from?"
 ### Step 3: Present Options
 Present exactly these 4 options:
 
@@ -136,7 +136,7 @@ Capture the worktree state before any option below `cd`'s away — see `referenc
 
 **Option 2 (Push and create PR):**
 
-1. Run `tools/branch-flow-preflight.sh <current-branch> <base-branch>` to validate the (source, target) pair against the canonical flow and write `.branch-flow-cleared`. The pre-push hook reads this sentinel and refuses pushes to dev/staging/main without it.
+1. Run `tools/branch-flow-preflight.sh <current-branch> <base-branch>` to validate the (source, target) pair against the canonical flow and write `.branch-flow-cleared`. The pre-push hook reads this sentinel and refuses pushes to dev/main without it.
 2. Push the branch. `unified-commit-gate` (push mode) fires before push.
 3. Create the PR: `gh pr create --fill` (`--fill` pre-fills title/body from commits; override with `--title`/`--body`). If the work has an issue identifier (per git-branch-conventions' "Before Naming the Branch"), the title should include it, matching branch/commit.
 4. GitHub auto-links AND auto-closes an issue if the PR body contains `Fixes #123` or `Closes #123` **and the PR merges into the repo's default branch** (not just any branch) — confirm that's actually intended before using that phrasing; a plain reference (`#123`) links without closing. If citing an issue, verify it resolves via `issue-verify` first — never construct the reference from memory.

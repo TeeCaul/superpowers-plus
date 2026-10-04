@@ -161,12 +161,12 @@ resolve_required_base() {
 # ---------------------------------------------------------------------------
 SKIP_ADVISORIES=false
 case "$SOURCE" in
-    main|master|develop|dev|staging)
+    main|master|develop|dev)
         if [[ -z "$TIP_SHA_OVERRIDE" ]]; then
             # The ADVISORY is what a protected branch skips -- not the audit
             # record. Previously this exited here without writing the sentinel,
             # while pre-push Gate 4 hard-requires .branch-flow-cleared for
-            # exactly these canonical-flow targets (dev/staging/main). That made
+            # exactly these canonical-flow targets (dev/main). That made
             # a dev->dev push unsatisfiable through the sanctioned tool: the one
             # command Gate 4's own error message tells you to run could not
             # produce the file it demands, unless you happened to pass --sha.

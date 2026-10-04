@@ -1475,7 +1475,7 @@ _fixture_transcript_cursor() {
 # ---------------------------------------------------------------------------
 # Item 10 — STRICT-DISABLE gate (llm-skill-review S0 fix, 2026-07-17)
 # tools/promotion-strict-toggle.sh disable weakens branch protection on
-# dev/staging/main and previously had NO approval gate at all. These tests
+# dev/main and previously had NO approval gate at all. These tests
 # cover: the gate blocks by default, is satisfied by its OWN dedicated
 # phrase/file token, is NOT satisfied by the generic push/release phrases
 # (category isolation -- the whole point of the fix), recognizes the raw
@@ -1515,7 +1515,7 @@ _fixture_transcript_cursor() {
   _fixture_transcript "approve strict-disable"
   local hook="$REPO_ROOT/tools/claude-hooks/pre-tool-use-red-autonomy.sh"
   HOME="$fake_home" run bash "$hook" \
-    <<<"$(printf '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"tools/promotion-strict-toggle.sh disable staging"},"transcript_path":"%s","session_id":"strict-disable-phrase-ok","cwd":"/tmp"}' "$TPATH")"
+    <<<"$(printf '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"tools/promotion-strict-toggle.sh disable main"},"transcript_path":"%s","session_id":"strict-disable-phrase-ok","cwd":"/tmp"}' "$TPATH")"
   rm -f "$TPATH"; rm -rf "$fake_home"
   [ "$status" -eq 0 ]
 }

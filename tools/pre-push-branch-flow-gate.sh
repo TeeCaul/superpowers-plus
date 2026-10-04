@@ -2,7 +2,7 @@
 # -----------------------------------------------------------------------------
 # pre-push-branch-flow-gate.sh
 #
-# Gate 4 of the pre-push composer. When pushing to dev|staging|main, verifies
+# Gate 4 of the pre-push composer. When pushing to dev|main, verifies
 # that .branch-flow-cleared exists, is v1 format, and its target field
 # matches the ref being pushed. The sentinel is written by
 # tools/branch-flow-preflight.sh; if missing or mismatched, the push is
@@ -28,7 +28,7 @@ check_branch_flow_sentinel() {
     local target_branch="$1"
     local pushed_sha="$2"
     case "$target_branch" in
-        dev|staging|main) ;;
+        dev|main) ;;
         *) return 0 ;;  # Only enforced for canonical-flow branches
     esac
     # Self-detect: skip this gate entirely if the repo doesn't have the
@@ -79,7 +79,7 @@ while IFS= read -r _line; do
 
     pushed_branch="${remote_ref#refs/heads/}"
     case "$pushed_branch" in
-        dev|staging|main)
+        dev|main)
             check_branch_flow_sentinel "$pushed_branch" "$local_sha" || ERRORS=$((ERRORS + 1))
             ;;
         *)

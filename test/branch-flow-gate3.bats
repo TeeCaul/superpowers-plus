@@ -55,16 +55,9 @@ teardown() {
     [ ! -f .branch-flow-cleared ]  # consumed after PASS
 }
 
-@test "gate4: valid sentinel for staging -> PASS" {
-    echo "v1|def456|dev|staging|2026-05-24T00:00:00Z" > .branch-flow-cleared
-    run ./harness.sh staging def456
-    [ "$status" -eq 0 ]
-    [ ! -f .branch-flow-cleared ]
-}
-
 @test "gate4: valid sentinel for main -> PASS" {
-    echo "v1|789aaa|staging|main|2026-05-24T00:00:00Z" > .branch-flow-cleared
-    run ./harness.sh main 789aaa
+    echo "v1|def456|dev|main|2026-05-24T00:00:00Z" > .branch-flow-cleared
+    run ./harness.sh main def456
     [ "$status" -eq 0 ]
     [ ! -f .branch-flow-cleared ]
 }
@@ -85,8 +78,8 @@ teardown() {
 }
 
 @test "gate4: sentinel with wrong target -> FAIL" {
-    echo "v1|abc123|dev|staging|2026-05-24T00:00:00Z" > .branch-flow-cleared
-    run ./harness.sh dev abc123  # sentinel says staging, pushing to dev
+    echo "v1|abc123|dev|main|2026-05-24T00:00:00Z" > .branch-flow-cleared
+    run ./harness.sh dev abc123  # sentinel says main, pushing to dev
     [ "$status" -ne 0 ]
     [[ "$output" == *"target"* ]] && [[ "$output" == *"!="* ]]
     [ -f .branch-flow-cleared ]  # NOT consumed on failure
