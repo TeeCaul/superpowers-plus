@@ -16,7 +16,7 @@
 # Transcript scan checks the last 10 messages the HUMAN typed (most recent
 # first). Only human-authored records count -- see HUMAN_MESSAGES_PY below:
 # subagent reports and task notifications are user-role records too, and must
-# neither grant nor revoke approval. Shapes read, across 3
+# neither grant nor revoke approval. Shapes read, across 4
 # message shapes: legacy {"role":"user",...}, current Claude {"type":"user",
 # "message":{"role":"user",...}}, Cursor Agent {"role":"user","message":{"content":...}},
 # and mid-turn queued commands
@@ -311,32 +311,45 @@ sys.stdout.write(s)
 PYEOF
 }
 
-# Check if command matches any RED pattern. Takes the ALREADY-NORMALIZED
-# command (see NORMALIZED_CMD below) -- normalization happens exactly once,
-# shared with is_strict_disable_action, not per-function.
+
 # HUMAN_MESSAGES_PY: the ONE definition of "a message the human typed", shared
 # by every transcript scan in this hook (push/release approval, strict-disable
 # approval, and the target-binding escape valve). Each scan used to carry its
 # own copy of the user-message reader, and all three counted every user-ROLE
 # record as the human. Claude Code also writes subagent hand-backs
-# (origin.kind "peer", isMeta true) and background-task notifications
-# (origin.kind "task-notification") as user-role records. So a reviewer report
-# containing "approve push" could authorize a push, and one containing a revoke
-# phrase could cancel the human's real approval (both seen 2026-10-03). A
-# record now counts only when origin.kind is "human", or when it has no origin
-# and is not isMeta (older transcripts and other clients' shapes that predate
-# origin). Anything else fails closed: it simply is not read.
+# (origin.kind "peer", isMeta true), background-task notifications
+# (origin.kind "task-notification"), and `!` / local-command output (no
+# origin) as user-role records. So a reviewer report containing "approve push"
+# could authorize a push, and one containing a revoke phrase could cancel the
+# human's real approval (both seen 2026-10-03).
+#
+# Current transcripts mark the human's prompts with origin.kind "human". When
+# any record in the file carries an origin, only those prompts count, plus
+# the human's AskUserQuestion answers, read from the structured
+# toolUseResult.answers (never from the rendered text, whose question side
+# Claude writes and could shape to look like an answer). A transcript with no
+# origin anywhere predates the field or comes from another client (Cursor,
+# legacy JSONL, Augment); there the older shape rules apply. Anything unread
+# simply cannot approve, so unknown shapes fail closed.
 HUMAN_MESSAGES_PY=$(cat <<'PYLIB'
 import json, re
 
-def _ask_answers(text):
-    # AskUserQuestion results render as: ..."<question>"="<answer>"... Only
-    # the answer side is the human's; the question is Claude's own wording.
+def _rendered_answers(text):
+    # Legacy-only fallback: "<question>"="<answer>" pairs in rendered text.
     if not isinstance(text, str):
         return ""
     return " ".join(re.findall(r'"[^"]*"\s*=\s*"([^"]*)"', text))
 
-def _text(content, ask_ids):
+def _structured_answers(obj):
+    tur = obj.get("toolUseResult")
+    answers = tur.get("answers") if isinstance(tur, dict) else None
+    if not isinstance(answers, dict):
+        return ""
+    return " ".join(v for v in answers.values() if isinstance(v, str))
+
+def _text(content, ask_ids, obj, modern):
+    """Text of a user-role record: plain text parts, plus answers to an
+    AskUserQuestion this session's assistant asked."""
     if isinstance(content, str):
         return content
     parts = []
@@ -348,19 +361,24 @@ def _text(content, ask_ids):
                 parts.append(p["text"])
             elif p.get("type") == "tool_result" and isinstance(p.get("tool_use_id"), str) \
                     and p.get("tool_use_id") in ask_ids:
-                raw = p.get("content", "")
-                if isinstance(raw, list):
-                    raw = _text(raw, set())
-                parts.append(_ask_answers(raw))
+                if modern:
+                    parts.append(_structured_answers(obj))
+                else:
+                    raw = p.get("content", "")
+                    if isinstance(raw, list):
+                        raw = " ".join(x.get("text", "") for x in raw if isinstance(x, dict))
+                    parts.append(_rendered_answers(raw))
     return " ".join(parts)
 
-def _is_human_record(obj):
-    if obj.get("isMeta") is True:
-        return False
-    origin = obj.get("origin")
-    if origin is None:
-        return True
-    return isinstance(origin, dict) and origin.get("kind") == "human"
+def _ask_answer_only(content, ask_ids, obj):
+    # Modern transcripts: a no-origin user record is read ONLY for the
+    # human's AskUserQuestion answers; its other text (tool output, command
+    # stdout, summaries) is not the human typing.
+    if not isinstance(content, list):
+        return ""
+    return " ".join(_structured_answers(obj) for p in content
+                    if isinstance(p, dict) and p.get("type") == "tool_result"
+                    and isinstance(p.get("tool_use_id"), str) and p.get("tool_use_id") in ask_ids)
 
 def _augment_messages(path):
     # Augment Agent sessions are one JSON document with chatHistory turns.
@@ -377,17 +395,13 @@ def _augment_messages(path):
     msgs = []
     for turn in doc.get("chatHistory", []):
         if isinstance(turn, dict) and turn.get("type") == "human":
-            t = _text(turn.get("content", ""), set())
+            t = _text(turn.get("content", ""), set(), {}, False)
             if t.strip():
                 msgs.append(t)
     return msgs
 
-def human_messages(path):
-    """Texts the human typed, oldest first."""
-    aug = _augment_messages(path)
-    if aug is not None:
-        return aug
-    msgs, ask_ids = [], set()
+def _records(path):
+    out = []
     with open(path, encoding="utf-8", errors="replace") as f:
         for line in f:
             line = line.strip()
@@ -397,43 +411,64 @@ def human_messages(path):
                 obj = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if not isinstance(obj, dict):
+            if isinstance(obj, dict):
+                out.append(obj)
+    return out
+
+def human_messages(path):
+    """Texts the human typed, oldest first."""
+    aug = _augment_messages(path)
+    if aug is not None:
+        return aug
+    records = _records(path)
+    modern = any("origin" in o for o in records
+                 if o.get("type") == "user" or o.get("role") == "user")
+    msgs, ask_ids = [], set()
+    for obj in records:
+        # Assistant turns: remember AskUserQuestion ids so the human's
+        # answers can be read from the matching tool_result records.
+        ac = None
+        if obj.get("role") == "assistant":
+            ac = obj.get("content")
+        elif obj.get("type") == "assistant" and isinstance(obj.get("message"), dict):
+            ac = obj["message"].get("content")
+        if isinstance(ac, list):
+            for p in ac:
+                if isinstance(p, dict) and p.get("type") == "tool_use" \
+                        and p.get("name") == "AskUserQuestion" and isinstance(p.get("id"), str):
+                    ask_ids.add(p["id"])
+            continue
+        t = ""
+        if obj.get("type") == "attachment":
+            # A message typed while Claude is mid-turn lands here first.
+            att = obj.get("attachment")
+            if isinstance(att, dict) and att.get("type") == "queued_command" \
+                    and isinstance(att.get("origin"), dict) and att["origin"].get("kind") == "human" \
+                    and isinstance(att.get("prompt"), str):
+                t = att["prompt"]
+        elif obj.get("type") == "user" or obj.get("role") == "user":
+            if obj.get("isMeta") is True:
                 continue
-            # Assistant turns: remember AskUserQuestion ids so the human's
-            # answers (tool_result records) can be read below.
-            ac = None
-            if obj.get("role") == "assistant":
-                ac = obj.get("content")
-            elif obj.get("type") == "assistant" and isinstance(obj.get("message"), dict):
-                ac = obj["message"].get("content")
-            if isinstance(ac, list):
-                for p in ac:
-                    if isinstance(p, dict) and p.get("type") == "tool_use" \
-                            and p.get("name") == "AskUserQuestion" and isinstance(p.get("id"), str):
-                        ask_ids.add(p["id"])
-                continue
-            t = ""
-            if obj.get("type") == "attachment":
-                # A message typed while Claude is mid-turn lands here first.
-                att = obj.get("attachment")
-                if isinstance(att, dict) and att.get("type") == "queued_command" \
-                        and isinstance(att.get("origin"), dict) and att["origin"].get("kind") == "human" \
-                        and isinstance(att.get("prompt"), str):
-                    t = att["prompt"]
-            elif obj.get("type") == "user" or obj.get("role") == "user":
-                if not _is_human_record(obj):
-                    continue
-                msg = obj.get("message")
-                if isinstance(msg, dict) and msg.get("content") is not None:
-                    t = _text(msg.get("content"), ask_ids)
-                else:
-                    t = _text(obj.get("content", ""), ask_ids)
-            if t.strip():
-                msgs.append(t)
+            msg = obj.get("message")
+            content = msg.get("content") if isinstance(msg, dict) and msg.get("content") is not None \
+                else obj.get("content", "")
+            origin = obj.get("origin")
+            if "origin" in obj and origin is not None:
+                if isinstance(origin, dict) and origin.get("kind") == "human":
+                    t = _text(content, ask_ids, obj, modern)
+            elif modern:
+                t = _ask_answer_only(content, ask_ids, obj)
+            else:
+                t = _text(content, ask_ids, obj, modern)
+        if t.strip():
+            msgs.append(t)
     return msgs
 PYLIB
 )
 
+# Check if command matches any RED pattern. Takes the ALREADY-NORMALIZED
+# command (see NORMALIZED_CMD below) -- normalization happens exactly once,
+# shared with is_strict_disable_action, not per-function.
 is_red_action() {
   local normalized="$1"
   [[ -s "$PATTERNS_FILE" ]] || return 1
