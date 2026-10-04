@@ -76,9 +76,9 @@ if [[ -n "$PROMOTION_SOURCE" ]]; then
   git check-ref-format "refs/heads/$PROMOTION_SOURCE" >/dev/null 2>&1 || die "invalid promotion source '$PROMOTION_SOURCE'"
 fi
 case "$DESTINATION" in
-  dev|staging|main)
+  dev|main)
     if [[ -z "$PROMOTION_SOURCE" ]]; then
-      case "$BRANCH" in dev|staging|main) ;; *) PROMOTION_SOURCE="$BRANCH" ;; esac
+      case "$BRANCH" in dev|main) ;; *) PROMOTION_SOURCE="$BRANCH" ;; esac
     fi
     ;;
 esac
@@ -238,7 +238,7 @@ validate_review_sentinel() {
 # it; this tool's read-only contract leaves consumption to the real push hook.
 check_branch_flow_readiness() {
   case "$DESTINATION" in
-    dev|staging|main) ;;
+    dev|main) ;;
     *) return ;;
   esac
   [[ -f tools/branch-flow-preflight.sh ]] || return
@@ -284,7 +284,7 @@ check_branch_flow_readiness() {
 source "$REPO_ROOT/tools/lib/pre-push-diff-range.sh"
 
 if already_reviewed_on_trusted_branch "$HEAD_SHA" "$REMOTE"; then
-  note "OK|${HEAD_SHA:0:8} is already on main/staging (fully reviewed)|nothing to review"
+  note "OK|${HEAD_SHA:0:8} is already on main (fully reviewed)|nothing to review"
 elif [[ ${#CHANGED[@]} -eq 0 ]]; then
   note "OK|no files changed vs $TARGET|nothing to review"
 else

@@ -154,9 +154,8 @@ resolve_audit_base() {
 
     for candidate in \
         "$tracking" \
-        origin/dev origin/staging origin/main origin/master \
-        upstream/dev upstream/staging upstream/main upstream/master \
-        gitlab/dev gitlab/staging gitlab/main gitlab/master
+        origin/dev origin/main origin/master \
+        upstream/dev upstream/main upstream/master
     do
         [[ -n "$candidate" ]] || continue
         if git rev-parse --verify "$candidate" &>/dev/null; then

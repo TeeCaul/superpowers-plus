@@ -19,7 +19,7 @@ name: PR Content IP Scan
 on:
   pull_request_target:
     types: [opened, edited, reopened, synchronize]
-    branches: [main, staging, dev]
+    branches: [main, dev]
 
 permissions:
   contents: read

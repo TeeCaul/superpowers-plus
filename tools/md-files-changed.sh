@@ -87,7 +87,7 @@ fi
 
 # Resolve the merge base.
 # Fallback chain: explicit override > this branch's own tracking upstream >
-# dev > staging > main > master (each tried as both origin/<name> and a bare
+# dev > main > master (each tried as both origin/<name> and a bare
 # local branch name) > HEAD^.
 #
 # This repo's actual workflow base for feature/fix branches is `dev` --
@@ -119,7 +119,7 @@ resolve_base() {
 
     for candidate in \
         "$tracking" \
-        origin/dev dev origin/staging staging origin/main main origin/master master
+        origin/dev dev origin/main main origin/master master
     do
         [[ -n "$candidate" ]] || continue
         if git rev-parse --verify "$candidate" >/dev/null 2>&1; then

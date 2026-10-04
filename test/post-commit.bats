@@ -147,12 +147,11 @@ read_sentinel_sha() {
 }
 
 @test "post-commit: promotes all three sentinels across a tree-identical promotion merge" {
-    # Simulates dev -> staging: a merge commit whose tree matches the branch
+    # Simulates dev -> main: a merge commit whose tree matches the branch
     # it merged in ("trees match; SHAs differ only by the promotion merge
-    # commit"). staging has made no independent commits, so the merge is a
+    # commit"). main has made no independent commits, so the merge is a
     # clean fast-forward-equivalent and the merge commit's tree equals dev's.
     git branch dev
-    git checkout -q -b staging
     git checkout -q dev
     echo feature > feature.txt
     git add feature.txt
@@ -162,8 +161,8 @@ read_sentinel_sha() {
     echo "v1|${dev_head}|PASS|2026-05-23T00:00:00Z|min-score=9.5" > .phr-cleared
     echo "v2|${dev_head}|PASS|2026-05-23T00:00:00Z|mean=9.0|unresolved_s0_s1=0|evidence_replay=ok" > .llm-skill-review-cleared
 
-    git checkout -q staging
-    git merge -q --no-ff dev -m "promote dev to staging"
+    git checkout -q main
+    git merge -q --no-ff dev -m "promote dev to main"
     merge_head=$(git rev-parse HEAD)
     [[ "$merge_head" != "$dev_head" ]]
 

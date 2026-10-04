@@ -2,9 +2,9 @@ name: Tests
 
 on:
   pull_request:
-    branches: [main, staging, dev]
+    branches: [main, dev]
   push:
-    branches: [main, staging, dev]
+    branches: [main, dev]
 
 jobs:
   node-tests:
@@ -85,17 +85,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Promotion dedupe. A PR into staging or main whose merge result has the
+      # Promotion dedupe. A PR into main whose merge result has the
       # SAME TREE as a commit that already passed this workflow on a push to
-      # dev/staging/main re-tests byte-identical code: ~8.5 min for nothing,
-      # twice per promotion. Skip the heavy steps only when (1) this PR's merge
+      # dev/main re-tests byte-identical code: ~8.5 min for nothing
+      # per promotion. Skip the heavy steps only when (1) this PR's merge
       # result tree equals its head tree (the base adds nothing untested) and
       # (2) a successful push run of this workflow exists for a commit with
       # that exact tree. Any error or doubt falls through to a full run. The job
       # still reports success, so the required "Shell Tests" check is satisfied.
       - name: Skip if this exact tree already passed (promotion dedupe)
         id: dedupe
-        if: github.event_name == 'pull_request' && (github.base_ref == 'staging' || github.base_ref == 'main')
+        if: github.event_name == 'pull_request' && github.base_ref == 'main'
         env:
           GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -107,7 +107,7 @@ jobs:
           head_tree="$(git rev-parse "${HEAD_SHA}^{tree}")" || full "no head tree"
           [ "$merge_tree" = "$head_tree" ] || full "merge result differs from head"
           shas="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/test.yml/runs?event=push&status=success&per_page=30" \
-                  --jq '.workflow_runs[] | select(.head_branch=="dev" or .head_branch=="staging" or .head_branch=="main") | .head_sha')" \
+                  --jq '.workflow_runs[] | select(.head_branch=="dev" or .head_branch=="main") | .head_sha')" \
                   || full "cannot list prior runs"
           for sha in $shas; do
             tree="$(gh api "repos/${GITHUB_REPOSITORY}/git/commits/${sha}" --jq '.tree.sha' 2>/dev/null)" || continue

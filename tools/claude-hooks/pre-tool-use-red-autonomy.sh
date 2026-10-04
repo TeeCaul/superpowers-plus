@@ -153,7 +153,7 @@
 #
 # *** STRICT-DISABLE GATE -- separate category from push/release ***
 # (llm-skill-review adversarial review, 2026-07-17, S0 finding)
-# tools/promotion-strict-toggle.sh disable <branch> weakens dev/staging/
+# tools/promotion-strict-toggle.sh disable <branch> weakens dev and
 # main's required_status_checks.strict flag -- a production branch-
 # protection control -- and previously had NO approval gate at all, unlike
 # the git push/branch-delete actions above. AGENTS.md documents this as
@@ -538,7 +538,7 @@ EOF
     {
       echo "BLOCKED: RED action (strict-disable) without explicit approval in current session."
       echo "  command: $(printf '%s' "$CMD" | tr '\n' ' ')"
-      echo "  This weakens branch protection on dev/staging/main and requires its OWN approval -- a prior 'approve push' or 'promote to main' does NOT satisfy this gate by design (AGENTS.md: never bundled with the promotion approval itself)."
+      echo "  This weakens branch protection on dev/main and requires its OWN approval -- a prior 'approve push' or 'promote to main' does NOT satisfy this gate by design (AGENTS.md: never bundled with the promotion approval itself)."
       echo "  Say 'approve strict-disable' to authorize this action."
     } >&2
     log 2 no-approval-strict-disable fired

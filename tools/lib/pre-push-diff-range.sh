@@ -30,10 +30,9 @@ resolve_push_base_ref() {
 
     for candidate in \
         "$tracking" \
-        "$remote_name/dev" "$remote_name/staging" "$remote_name/main" "$remote_name/master" \
-        origin/dev origin/staging origin/main origin/master \
-        upstream/dev upstream/staging upstream/main upstream/master \
-        gitlab/dev gitlab/staging gitlab/main gitlab/master
+        "$remote_name/dev" "$remote_name/main" "$remote_name/master" \
+        origin/dev origin/main origin/master \
+        upstream/dev upstream/main upstream/master
     do
         [[ -n "$candidate" ]] || continue
         if git rev-parse --verify "$candidate" >/dev/null 2>&1; then
@@ -107,7 +106,7 @@ resolve_diff_range() {
 
 # already_reviewed_on_trusted_branch <sha> <remote_name>
 #
-# True when <sha> is already reachable from origin/main or origin/staging --
+# True when <sha> is already reachable from origin/main --
 # i.e. it already passed every review gate to land there. Content in this
 # state needs no second review just because it is being pushed again under a
 # different branch name: the common case is a promotion back-sync
@@ -122,10 +121,8 @@ resolve_diff_range() {
 # real sentinel) -- fail-closed, never fail-open.
 already_reviewed_on_trusted_branch() {
     local sha="$1" remote_name="$2"
-    local ref
-    for ref in "$remote_name/main" "$remote_name/staging"; do
-        git rev-parse --verify -q "$ref" >/dev/null 2>&1 || continue
-        git merge-base --is-ancestor "$sha" "$ref" 2>/dev/null && return 0
-    done
+    local ref="$remote_name/main"
+    git rev-parse --verify -q "$ref" >/dev/null 2>&1 || return 1
+    git merge-base --is-ancestor "$sha" "$ref" 2>/dev/null && return 0
     return 1
 }

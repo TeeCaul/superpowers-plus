@@ -19,7 +19,6 @@ triggers:
   - "deploy this"
   - "deploy to prod"
   - "release this"
-  - "release to staging"
   - "release to production"
   - "push to prod"
   - "push to production"
@@ -28,11 +27,8 @@ triggers:
   - "get this out"
   - "ready to merge"
   - "promote dev"
-  - "promote staging"
   - "promote to main"
-  - "promote to staging"
   - "merge to main"
-  - "merge to staging"
   - "cherry-pick"
   - "port to"
   - "back-sync"
@@ -50,8 +46,8 @@ anti_triggers:
   - "git pull --rebase"
   - "interactive rebase"
   - "rebase this comment"
-description: "Trusted-advisor gate for branch and PR hygiene. Auto-invokes when the user mentions creating a branch, opening a PR, shipping/promoting/deploying, cherry-picking, rebasing, hotfixing, or back-syncing. Suggests and explains in-script (preflight always exits 0) and writes a .branch-flow-cleared sentinel that pre-push Gate 3 hard-consumes on pushes to dev/staging/main. Three escape hatches: per-branch ack file (touch .git/base-advisory-ack-<branch>), GIT_BASE_OVERRIDE=1 env var, or use an exempt prefix (hotfix/, release/, backport/, tagged-release/) which is exempt from the base-alignment advisory and typically does not target dev/staging/main. Multi-team config via .git-guidance.yml (currently only default_base is read). Uses git first-parent chain to verify branch base (not naive merge-base). Advises on retry-suffix branches (-vN), back-sync/mirror naming, server-regex compliance, anti-leak fixtures, and loop-on-identical-error retries."
-summary: "Branch/PR-hygiene advisor: auto-invokes on intent. Preflight script always exits 0; pre-push Gate 3 refuses pushes to dev/staging/main without a valid .branch-flow-cleared sentinel. Run tools/branch-flow-preflight.sh before branch creation / PR / push."
+description: "Trusted-advisor gate for branch and PR hygiene. Auto-invokes when the user mentions creating a branch, opening a PR, shipping/promoting/deploying, cherry-picking, rebasing, hotfixing, or back-syncing. Suggests and explains in-script (preflight always exits 0) and writes a .branch-flow-cleared sentinel that pre-push Gate 3 hard-consumes on pushes to dev/main. Three escape hatches: per-branch ack file (touch .git/base-advisory-ack-<branch>), GIT_BASE_OVERRIDE=1 env var, or use an exempt prefix (hotfix/, release/, backport/, tagged-release/) which is exempt from the base-alignment advisory and typically does not target dev/main. Multi-team config via .git-guidance.yml (currently only default_base is read). Uses git first-parent chain to verify branch base (not naive merge-base). Advises on retry-suffix branches (-vN), back-sync/mirror naming, server-regex compliance, anti-leak fixtures, and loop-on-identical-error retries."
+summary: "Branch/PR-hygiene advisor: auto-invokes on intent. Preflight script always exits 0; pre-push Gate 3 refuses pushes to dev/main without a valid .branch-flow-cleared sentinel. Run tools/branch-flow-preflight.sh before branch creation / PR / push."
 coordination:
   group: engineering
   order: 1
@@ -71,13 +67,13 @@ composition:
 
 > **Wrong skill?** Branch-name regex check alone -> `git-branch-conventions`. Pull before resuming work -> `branch-sync-gate`. Per-team flow specifics -> team's own documentation.
 
-**Announce at start:** "I'm using **branch-flow-gate** to advise on branch hygiene. (Auto-invoked by intent. The preflight script never blocks; the sentinel it writes is consumed by pre-push Gate 3 on pushes to dev/staging/main.)"
+**Announce at start:** "I'm using **branch-flow-gate** to advise on branch hygiene. (Auto-invoked by intent. The preflight script never blocks; the sentinel it writes is consumed by pre-push Gate 3 on pushes to dev/main.)"
 
 ## Core Principle
 
 This skill **strongly recommends** branching patterns that keep teams aligned but **never mandates or precludes** deviation when a developer has a valid reason. Every advisory exits 0 from the skill / preflight script. Every advisory includes an explicit escape hatch.
 
-> **Honest disclosure -- this is advisory in-script, hard-blocking at push time.** The preflight writes a `.branch-flow-cleared` sentinel which is consumed by `pre-push` Gate 3 on pushes to `dev`/`staging`/`main`. Without a valid sentinel for the pushed SHA, Gate 3 **refuses the push**. Hotfix/release/backport branches don't push to those canonical targets so are de-facto exempt; if your flow pushes hotfixes directly to `main`, use a `hotfix/*` branch name (auto-exempt) or set `GIT_BASE_OVERRIDE=1`.
+> **Honest disclosure -- this is advisory in-script, hard-blocking at push time.** The preflight writes a `.branch-flow-cleared` sentinel which is consumed by `pre-push` Gate 3 on pushes to `dev`/`main`. Without a valid sentinel for the pushed SHA, Gate 3 **refuses the push**. Hotfix/release/backport branches don't push to those canonical targets so are de-facto exempt; if your flow pushes hotfixes directly to `main`, use a `hotfix/*` branch name (auto-exempt) or set `GIT_BASE_OVERRIDE=1`.
 
 ## Auto-Invocation
 
@@ -138,7 +134,7 @@ tools/branch-flow-preflight.sh "<source-branch>" "<target-branch>"
 tools/branch-flow-preflight.sh --identical-check "$ERR1" "$ERR2"
 ```
 
-Always exits 0. Writes `.branch-flow-cleared` sentinel that pre-push Gate 3 consumes on pushes to `dev`/`staging`/`main`. The sentinel must match the pushed commit's SHA; missing or stale (SHA-mismatched) sentinels == refused push.
+Always exits 0. Writes `.branch-flow-cleared` sentinel that pre-push Gate 3 consumes on pushes to `dev`/`main`. The sentinel must match the pushed commit's SHA; missing or stale (SHA-mismatched) sentinels == refused push.
 
 ## Multi-Team Config
 
@@ -178,7 +174,7 @@ pre-push:
 
 post-checkout fires once when the branch is created (before any work is invested). pre-push fires once per push (last local chance to notice). Neither of these advisory hooks blocks.
 
-> Note: This repo's `tools/pre-push` (installed via `tools/install-hooks.sh`) is the **authoritative** path. It runs Gate 3 which consumes `.branch-flow-cleared` and **does** block when the sentinel is missing/stale on pushes to dev/staging/main. The Lefthook/Husky integrations above are for contributors who want advisory output earlier in the workflow; they do not replace the in-tree hook. **If `tools/pre-push` is not installed in this clone, Gate 3 does not fire and pushes to dev/staging/main rely entirely on PR review** -- see reference.md F10. **Server-side enforcement (CI runners, merge-queue automation, bot merges) requires a server-side hook or branch-protection rule -- the local sentinel does not propagate.**
+> Note: This repo's `tools/pre-push` (installed via `tools/install-hooks.sh`) is the **authoritative** path. It runs Gate 3 which consumes `.branch-flow-cleared` and **does** block when the sentinel is missing/stale on pushes to dev/main. The Lefthook/Husky integrations above are for contributors who want advisory output earlier in the workflow; they do not replace the in-tree hook. **If `tools/pre-push` is not installed in this clone, Gate 3 does not fire and pushes to dev/main rely entirely on PR review** -- see reference.md F10. **Server-side enforcement (CI runners, merge-queue automation, bot merges) requires a server-side hook or branch-protection rule -- the local sentinel does not propagate.**
 
 ## Anti-Patterns to Avoid (in the skill, not the user)
 
@@ -196,7 +192,7 @@ post-checkout fires once when the branch is created (before any work is invested
 |---|---|
 | Just-branched feature off dev | Advisory should be quiet (or PASS) |
 | Forgot to fetch + dev moved -> stale-but-correct base | Advisory says "rebase recommended"; you can ignore for now |
-| Cut from staging because of an integration test | Heed the advisory and rebase OR acknowledge with `touch .git/base-advisory-ack-<branch>` |
+| Cut from a stale integration branch because of an integration test | Heed the advisory and rebase OR acknowledge with `touch .git/base-advisory-ack-<branch>` |
 | P0 hotfix at 3am off main | Use `hotfix/` prefix; advisory exempts |
 | Renaming `-v2` retry to canonical name | Heed and `git branch -m`; recover via amend + force-with-lease |
 

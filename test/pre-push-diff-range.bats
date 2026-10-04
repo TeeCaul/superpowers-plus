@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # Tests for tools/lib/pre-push-diff-range.sh's already_reviewed_on_trusted_branch(),
 # which exempts pre-push Gates 2/5/6 from requiring a fresh review sentinel
-# when the pushed SHA already sits on origin/main or origin/staging -- e.g. a
+# when the pushed SHA already sits on origin/main -- e.g. a
 # promotion back-sync branch (chore/sync-dev-with-main, always cut directly
 # from main's tip) or a re-push of an already-merged branch. Content already
 # on main already passed every gate to get there.
@@ -11,7 +11,7 @@ setup() {
     WORK="$(mktemp -d)"
     cd "$WORK"
 
-    # "origin" is a bare repo so origin/main and origin/staging are real
+    # "origin" is a bare repo so origin/main and other remote branches are real
     # remote-tracking refs, matching how the gates see them in practice.
     git init -q --bare origin.git
     git clone -q origin.git work
@@ -27,13 +27,13 @@ setup() {
     MAIN_SHA=$(git rev-parse HEAD)
     export MAIN_SHA
 
-    echo staging-only > staging.txt
-    git checkout -q -b staging
-    git add staging.txt
-    git commit -q -m "staging extra"
-    git push -q origin staging
-    STAGING_SHA=$(git rev-parse HEAD)
-    export STAGING_SHA
+    echo side-only > side.txt
+    git checkout -q -b side
+    git add side.txt
+    git commit -q -m "side extra"
+    git push -q origin side
+    SIDE_SHA=$(git rev-parse HEAD)
+    export SIDE_SHA
 
     git checkout -q main
     git fetch -q origin
@@ -68,9 +68,9 @@ run_check() {
     [ "$status" -eq 0 ]
 }
 
-@test "already_reviewed_on_trusted_branch: true for a commit only on origin/staging" {
-    run run_check "$STAGING_SHA" origin
-    [ "$status" -eq 0 ]
+@test "already_reviewed_on_trusted_branch: false for a commit only on a non-main remote branch" {
+    run run_check "$SIDE_SHA" origin
+    [ "$status" -eq 1 ]
 }
 
 @test "already_reviewed_on_trusted_branch: false for an unrelated feature commit" {
@@ -93,7 +93,7 @@ run_check() {
     [ "$status" -eq 1 ]
 }
 
-@test "already_reviewed_on_trusted_branch: false (not crash) when neither origin/main nor origin/staging exist" {
+@test "already_reviewed_on_trusted_branch: false (not crash) when origin/main does not exist" {
     cd "$WORK"
     git init -q --bare origin2.git
     git clone -q origin2.git work2
