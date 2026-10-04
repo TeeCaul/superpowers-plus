@@ -311,7 +311,6 @@ sys.stdout.write(s)
 PYEOF
 }
 
-
 # HUMAN_MESSAGES_PY: the ONE definition of "a message the human typed", shared
 # by every transcript scan in this hook (push/release approval, strict-disable
 # approval, and the target-binding escape valve). Each scan used to carry its
@@ -361,7 +360,10 @@ def _text(content, ask_ids, obj, modern):
                 parts.append(p["text"])
             elif p.get("type") == "tool_result" and isinstance(p.get("tool_use_id"), str) \
                     and p.get("tool_use_id") in ask_ids:
-                if modern:
+                # Structured answers whenever the record has them (headless
+                # SDK sessions write toolUseResult but never origin); the
+                # rendered text only for older records without toolUseResult.
+                if modern or isinstance(obj.get("toolUseResult"), dict):
                     parts.append(_structured_answers(obj))
                 else:
                     raw = p.get("content", "")
