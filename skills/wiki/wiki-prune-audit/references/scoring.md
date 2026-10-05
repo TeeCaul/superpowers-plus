@@ -6,6 +6,16 @@ All read-only. Persist intermediate data to a scratch file, not context.
 
 Takes one or more root page IDs/slugs. For each root, recursively list children via your wiki API, capturing `id, title, url, updatedAt, textLen, text, parentDocumentId`. One list call per parent (paginate if needed — do NOT do one fetch per page). Run as a background job for large trees. `ENUM_ERRORS` must be 0 for a complete audit — if any subtree is dropped, re-run rather than publish a partial worklist.
 
+**Outline:** use the bundled tool instead of the script below. It reads the tree in one call and exits non-zero rather than dropping a subtree:
+
+```bash
+for r in ROOT1 ROOT2; do tools/wiki-tree-sweep.py --jsonl "$r" >> pages.jsonl || echo "INCOMPLETE: $r"; done
+```
+
+Each record has `id, title, url, depth, parentDocumentId, updatedAt, textLen, text`. Any `INCOMPLETE` line means re-run before scoring.
+
+**Other platforms:** adapt this enumerator to your wiki API.
+
 ```js
 // enum.js <outfile.jsonl> <rootSlug...>
 // Adapt the wiki-api calls below to your wiki API client.

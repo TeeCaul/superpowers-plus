@@ -82,6 +82,16 @@ WIKI_API_KEY="$WIKI_API_KEY" WIKI_API_URL="$WIKI_API_URL" \
 
 `wiki-write.sh` runs scope check → API write → round-trip re-fetch in a single call, emitting `{"ok":true,"id":"...","url":"...","title":"..."}`. Exit codes: `0` verified, `1` scope violation, `2` env/arg error, `3` API error, `4` verification failed.
 
+**Page trees:** to search or list a page and everything beneath it, use `wiki-tree-sweep.py`. Never hand-write a recursive walk over `documents.list`: it needs pagination, a visited set, and retry handling, and ad-hoc versions get one of those wrong and return a partial tree that looks complete. The tool reads `OUTLINE_API_URL`/`OUTLINE_API_KEY` from `~/.codex/.env` itself, so no bridge is needed:
+
+```bash
+~/.codex/superpowers-plus/tools/wiki-tree-sweep.py "<root-id-or-url>" "<python-regex>"  # tab-separated matches
+~/.codex/superpowers-plus/tools/wiki-tree-sweep.py --list  "<root-id-or-url>"           # indented tree
+~/.codex/superpowers-plus/tools/wiki-tree-sweep.py --jsonl "<root-id-or-url>"           # one record per page, with text
+```
+
+Exit codes: `0` matches (or list done), `1` no matches, `2` usage, `3` API failure (nothing partial), `4` `--keep-going` skipped pages. Treat `3` and `4` as an incomplete sweep, never as "no matches". Draft pages are not in the published tree and are not swept.
+
 Use the lower-level MCP tool table below only for operations not covered by the wrappers (`list_collections`, `delete_page`, `archive_page`).
 
 ## MCP Tool Mappings

@@ -13,6 +13,7 @@ Three shell scripts:
 | `tools/wiki-scope-check.sh` | Parent-walk a document ID and exit 0 only if it sits under an allowed root. |
 | `tools/wiki-write.sh`       | Wrapper around `documents.create|update|move` that runs the scope check, then the write, then a post-write re-fetch to verify. |
 | `tools/wiki-read.sh`        | Wrapper around `documents.info|search|list` that returns canonical JSON (including the upstream `url` field verbatim). |
+| `tools/wiki-tree-sweep.py`  | Read-only: search, list, or export (`--jsonl`) a page and every page beneath it. Fails with exit 3 instead of returning a partial tree. |
 
 They target any wiki whose HTTP API exposes the JSON-RPC verbs listed above on
 a base URL, returning `{data:{id,title,url,...}}`-shaped responses. See

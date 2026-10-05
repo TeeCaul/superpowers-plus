@@ -52,7 +52,7 @@ Finds and ranks the least-useful pages under a wiki subtree so a human (or `wiki
 
 ### Phase 1 -- Enumerate
 
-Recursively list every descendant of each root via your wiki API, capturing `id, title, url, updatedAt, textLen, text, parentDocumentId`. One list call per parent (not per page); paginate if needed. Run as a background job for large trees. See `references/scoring.md` for a working enumerator. **If enumeration errors occur, re-run rather than publish a partial worklist.**
+Recursively list every descendant of each root via your wiki API, capturing `id, title, url, updatedAt, textLen, text, parentDocumentId`. One list call per parent (not per page); paginate if needed. Run as a background job for large trees. On Outline, run `tools/wiki-tree-sweep.py --jsonl <root>` once per root (exit 0 = complete tree); for other platforms see `references/scoring.md`. **If enumeration errors occur, re-run rather than publish a partial worklist.**
 
 ### Phase 2 -- Score (heuristic, read-only)
 
