@@ -83,7 +83,7 @@ page() {
   run python3 "$TOOL" --list root
   [ "$status" -eq 0 ]
   [ "$(grep -c '^collections.documents' "$FIX/calls.log")" -eq 1 ]
-  ! grep -q '^documents.list' "$FIX/calls.log"
+  [ "$(grep -c '^documents.list' "$FIX/calls.log")" -eq 0 ]
 }
 
 @test "--list prints the subtree indented by depth in page order" {
@@ -132,8 +132,9 @@ page() {
   echo 99 > "$FIX/documents.info__b.fail"
   run --separate-stderr python3 "$TOOL" root needle
   [ "$status" -eq 3 ]
-  [[ "$stderr" == *"fetching 'B' (b)"* ]]
-  [[ "$stderr" == *"aborting"* ]]
+  [[ "$stderr" == *"reading 'B' (b)"* ]]
+  # Earlier pages matched, but nothing partial may reach stdout.
+  [ -z "$output" ]
 }
 
 @test "--keep-going reports the skipped page and exits 4" {
@@ -221,15 +222,96 @@ listing() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"needle in B"* ]]
   grep -q '^documents.list root@100$' "$FIX/calls.log"
-  ! grep -q '^documents.info b$' "$FIX/calls.log"
+  [ "$(grep -c '^documents.info b$' "$FIX/calls.log")" -eq 0 ]
   [[ "$output" != *"filler"* ]]
 }
 
-@test "--max-pages refuses an oversized tree before fetching any page text" {
+@test "--max-pages refuses an oversized tree with exit 5 before reading page text" {
   run --separate-stderr python3 "$TOOL" --max-pages 3 root needle
-  [ "$status" -eq 2 ]
+  [ "$status" -eq 5 ]
   [[ "$stderr" == *"over --max-pages 3"* ]]
-  ! grep -q '^documents.info a$' "$FIX/calls.log"
+  [ -z "$output" ]
+  [ "$(grep -c '^documents.info a$' "$FIX/calls.log")" -eq 0 ]
+}
+
+@test "an unexpected response shape exits 3, never 1 (no matches)" {
+  echo '{"ok":true,"data":{"documents":[]}}' > "$FIX/collections.documents__col1.json"
+  run --separate-stderr python3 "$TOOL" root needle
+  [ "$status" -eq 3 ]
+  [ -z "$output" ]
+}
+
+@test "a tree node without an id exits 3" {
+  echo '{"ok":true,"data":[{"id":"root","children":[{"title":"no id"}]}]}' \
+    > "$FIX/collections.documents__col1.json"
+  run --separate-stderr python3 "$TOOL" --list root
+  [ "$status" -eq 3 ]
+}
+
+@test "a page read that returns no text exits 3 instead of counting as empty" {
+  echo '{"ok":true,"data":null}' > "$FIX/documents.info__b.json"
+  run --separate-stderr python3 "$TOOL" root needle
+  [ "$status" -eq 3 ]
+  [ -z "$output" ]
+}
+
+@test "a failed batch call turns batching off instead of retrying each parent" {
+  echo 99 > "$FIX/documents.list__root@0.fail"     # 429 every time
+  run --separate-stderr python3 "$TOOL" root needle
+  [ "$status" -eq 0 ]
+  [ "$(grep -c '^documents.list' "$FIX/calls.log")" -eq 1 ]
+}
+
+@test "paging stops when the server ignores offset" {
+  local fill=() i
+  for i in $(seq 1 100); do fill+=("x$i:filler"); done
+  listing root 0 "${fill[@]}"
+  cp "$FIX/documents.list__root@0.json" "$FIX/documents.list__root@100.json"
+  run --separate-stderr python3 "$TOOL" root needle
+  [ "$status" -eq 0 ]
+  [ "$(grep -c '^documents.list root@' "$FIX/calls.log")" -eq 2 ]
+  [[ "$output" == *"needle in A"* ]]
+}
+
+@test "a wiki-api setup error is not retried" {
+  printf '#!/usr/bin/env bash\necho x >> "$FIX/calls.log"\necho "ERROR: ~/.codex/.env missing" >&2\nexit 1\n' \
+    > "$BATS_TEST_TMPDIR/broken-api"
+  chmod +x "$BATS_TEST_TMPDIR/broken-api"
+  WIKI_API="$BATS_TEST_TMPDIR/broken-api" run --separate-stderr python3 "$TOOL" --list root
+  [ "$status" -eq 3 ]
+  [ "$(wc -l < "$FIX/calls.log" | tr -d ' ')" -eq 1 ]
+  [[ "$stderr" == *".env missing"* ]]
+}
+
+@test "--keep-going still aborts when pages keep failing in a row" {
+  local id
+  for id in a a1 a1x b; do echo 99 > "$FIX/documents.info__$id.fail"; done
+  run --separate-stderr python3 "$TOOL" --keep-going root needle
+  [ "$status" -eq 3 ]
+  [[ "$stderr" == *"3 pages in a row failed"* ]]
+  [ -z "$output" ]
+}
+
+# wiki-api is exercised with a fake curl that prints the URL it was given.
+_wiki_api_url() {
+  local home="$BATS_TEST_TMPDIR/home" bin="$BATS_TEST_TMPDIR/bin"
+  mkdir -p "$home/.codex" "$bin"
+  printf 'OUTLINE_API_KEY=k\nOUTLINE_API_URL=%s\n' "$1" > "$home/.codex/.env"
+  printf '#!/usr/bin/env bash\nfor a in "$@"; do [[ "$a" == http* ]] && echo "$a"; done; exit 0\n' > "$bin/curl"
+  chmod +x "$bin/curl"
+  HOME="$home" PATH="$bin:$PATH" "$REPO_ROOT/tools/wiki-api" auth.info '{}'
+}
+
+@test "wiki-api adds /api when OUTLINE_API_URL is the bare instance URL" {
+  run _wiki_api_url "https://wiki.example.test/"
+  [ "$status" -eq 0 ]
+  [ "$output" = "https://wiki.example.test/api/auth.info" ]
+}
+
+@test "wiki-api keeps an OUTLINE_API_URL that already ends in /api" {
+  run _wiki_api_url "https://wiki.example.test/api"
+  [ "$status" -eq 0 ]
+  [ "$output" = "https://wiki.example.test/api/auth.info" ]
 }
 
 @test "usage errors exit 2" {

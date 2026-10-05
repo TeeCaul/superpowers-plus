@@ -4,17 +4,23 @@ All read-only. Persist intermediate data to a scratch file, not context.
 
 ## Phase 1 — recursive enumerator
 
-Takes one or more root page IDs/slugs. For each root, recursively list children via your wiki API, capturing `id, title, url, updatedAt, textLen, text, parentDocumentId`. One list call per parent (paginate if needed — do NOT do one fetch per page). Run as a background job for large trees. `ENUM_ERRORS` must be 0 for a complete audit — if any subtree is dropped, re-run rather than publish a partial worklist.
+Takes one or more root page IDs/slugs and produces one JSON record per page with `id, title, url, updatedAt, textLen, text, parentDocumentId`. Run as a background job for large trees.
 
-**Outline:** use the bundled tool instead of the script below. It reads the tree in one call and exits non-zero rather than dropping a subtree:
+**Outline:** use the bundled tool. It gets the tree shape in one call and exits non-zero (with empty stdout) rather than dropping a subtree. Each root goes to its own file, and only a complete root is kept:
 
 ```bash
-for r in ROOT1 ROOT2; do tools/wiki-tree-sweep.py --jsonl "$r" >> pages.jsonl || echo "INCOMPLETE: $r"; done
+SWEEP=~/.codex/superpowers-plus/tools/wiki-tree-sweep.py
+rm -f pages.jsonl
+for r in ROOT1 ROOT2; do
+  if "$SWEEP" --jsonl "$r" > "root-$r.jsonl"; then cat "root-$r.jsonl" >> pages.jsonl
+  else echo "INCOMPLETE: $r (exit $?)"; fi
+  rm -f "root-$r.jsonl"
+done
 ```
 
-Each record has `id, title, url, depth, parentDocumentId, updatedAt, textLen, text`. Any `INCOMPLETE` line means re-run before scoring.
+Any `INCOMPLETE` line means re-run the whole loop before scoring; exit 5 means the tree is over the tool's page limit, so add `--max-pages N`. If roots overlap, dedupe `pages.jsonl` by `id` before scoring.
 
-**Other platforms:** adapt this enumerator to your wiki API.
+**Other platforms:** adapt this enumerator to your wiki API: one list call per parent (paginate if needed; do NOT do one fetch per page). `ENUM_ERRORS` must be 0 for a complete audit; if any subtree is dropped, re-run rather than publish a partial worklist.
 
 ```js
 // enum.js <outfile.jsonl> <rootSlug...>

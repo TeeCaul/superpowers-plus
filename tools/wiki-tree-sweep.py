@@ -11,28 +11,33 @@ Usage:
 
 Options:
   -i, --ignore-case   case-insensitive pattern match
-  --keep-going        record pages that fail to fetch and continue (exit 4 at end)
-  --max-pages N       refuse trees larger than N pages (default 2000)
-  --delay SECONDS     pause between page fetches (default 0.1)
+  --keep-going        skip pages that fail to fetch, print the rest, exit 4
+  --max-pages N       refuse trees larger than N pages (default 2000; exit 5)
+  --delay SECONDS     pause between API calls (default 0.1)
   -v, --verbose       progress on stderr
   -h, --help          show this help
 
 Output (search mode): one line per match, tab-separated:
   <depth> <title> <url> <line-number> <line>
+Nothing is written to stdout until every page has been read, so a run that
+exits 3 leaves stdout empty. Only --keep-going prints a known-incomplete result
+(exit 4), and stderr names the pages it skipped.
 
 Exit codes:
   0  search found matches, or --list / --jsonl completed
   1  search completed with no matches
   2  usage error
-  3  wiki API failure; nothing partial is reported as complete
+  3  wiki API failure or unexpected response; stdout is empty
   4  --keep-going finished, but one or more pages could not be fetched
+  5  tree is larger than --max-pages; re-run with a higher --max-pages
 
 How it works: one collections.documents call returns the collection's whole
 published page tree, and the subtree under <root> is cut from it, so the tree
 shape never depends on a hand-paginated walk. Page text is then read in batches
-with documents.list (one call per parent, up to 100 children each); because the
-expected children are already known from the tree, any page a batch misses is
-fetched on its own with documents.info instead of being silently dropped.
+with documents.list (one call per 100 children of each parent). The expected
+children are already known from the tree, so any page a batch misses is read
+on its own with documents.info instead of being dropped. If a batch call fails,
+batching stops and every remaining page is read on its own.
 Draft pages are not part of the published tree, so a draft root or draft
 children are not swept; a draft root exits 3.
 
@@ -53,9 +58,11 @@ import sys
 import time
 from collections import OrderedDict
 
-EXIT_MATCH, EXIT_NO_MATCH, EXIT_USAGE, EXIT_API, EXIT_PARTIAL = 0, 1, 2, 3, 4
+EXIT_MATCH, EXIT_NO_MATCH, EXIT_USAGE, EXIT_API, EXIT_PARTIAL, EXIT_TOO_BIG = 0, 1, 2, 3, 4, 5
 ATTEMPTS = 4
 MAX_BACKOFF = 8.0
+CALL_TIMEOUT = 150          # wiki-api caps curl at 120s; this is the backstop
+MAX_CONSECUTIVE_FAILURES = 3
 
 
 class ApiError(Exception):
@@ -73,21 +80,25 @@ def wiki_api_path():
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), "wiki-api")
 
 
-def call(endpoint, body, verbose=False):
+def call(endpoint, body, verbose=False, attempts=ATTEMPTS):
     """POST through wiki-api; retry transport errors and rate limits, then raise."""
     delay = float(os.environ.get("WIKI_TREE_SWEEP_BACKOFF", "2"))
     last = "no attempt made"
-    for attempt in range(1, ATTEMPTS + 1):
+    for attempt in range(1, attempts + 1):
         try:
             proc = subprocess.run(
                 [wiki_api_path(), endpoint, json.dumps(body)],
-                capture_output=True, text=True, timeout=60,
+                capture_output=True, text=True, timeout=CALL_TIMEOUT,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             last = str(exc)
         else:
             if proc.returncode != 0:
                 last = proc.stderr.strip() or f"wiki-api exited {proc.returncode}"
+                # wiki-api's own setup checks (missing .env, empty key, endpoint
+                # not allowlisted) print "ERROR: ..." and can never succeed on retry.
+                if last.startswith("ERROR:"):
+                    raise ApiError(f"{endpoint}: {last}")
             else:
                 try:
                     # strict=False keeps raw control characters inside strings.
@@ -103,12 +114,12 @@ def call(endpoint, body, verbose=False):
                     # Only rate limits and server errors are worth retrying.
                     if status not in (429, 500, 502, 503, 504) and err != "rate_limit_exceeded":
                         raise ApiError(f"{endpoint}: {last}")
-        if attempt < ATTEMPTS:
+        if attempt < attempts:
             if verbose:
-                log(f"{endpoint} attempt {attempt}/{ATTEMPTS} failed ({last}); retrying in {delay:g}s")
+                log(f"{endpoint} attempt {attempt}/{attempts} failed ({last}); retrying in {delay:g}s")
             time.sleep(delay)
             delay = min(delay * 2, MAX_BACKOFF)
-    raise ApiError(f"{endpoint}: {last} after {ATTEMPTS} attempts")
+    raise ApiError(f"{endpoint}: {last} after {attempts} attempt(s)")
 
 
 def root_ref(raw):
@@ -118,9 +129,11 @@ def root_ref(raw):
 
 
 def find_node(nodes, target):
-    stack = list(nodes or [])
+    stack = list(nodes)
     while stack:
         node = stack.pop()
+        if not isinstance(node, dict):
+            raise ApiError("collections.documents returned a malformed tree node")
         if node.get("id") == target:
             return node
         stack.extend(node.get("children") or [])
@@ -133,6 +146,8 @@ def flatten(node, depth=0, parent=None):
     stack = [(node, depth, parent)]
     while stack:
         cur, d, p = stack.pop()
+        if not isinstance(cur, dict) or not cur.get("id"):
+            raise ApiError("collections.documents returned a tree node without an id")
         if cur["id"] in seen:
             continue
         seen.add(cur["id"])
@@ -150,6 +165,8 @@ def discover(root, verbose):
     if not info.get("collectionId"):
         raise ApiError(f"root '{info.get('title', root)}' has no collection (draft or template?)")
     tree = call("collections.documents", {"id": info["collectionId"]}, verbose)
+    if not isinstance(tree, list):
+        raise ApiError("collections.documents did not return a list of pages")
     node = find_node(tree, info["id"])
     if node is None:
         raise ApiError(f"root '{info.get('title', root)}' is not in its collection's published "
@@ -160,9 +177,10 @@ def discover(root, verbose):
 def prefetch_text(pages, root_doc, opts):
     """Read child pages in batches of up to 100 per parent.
 
-    Returns {id: document} for every page a batch returned with its text. A
-    batch error only costs the speed-up: pages missing here are fetched one by
-    one by the caller, so nothing is lost silently.
+    Returns {id: document} for every page a batch returned with its text. This
+    is only a speed-up: pages missing here are read one by one by the caller,
+    so a batch problem never loses a page. The first failed batch call (one
+    attempt, no retries) turns batching off for the rest of the run.
     """
     docs = {root_doc["id"]: root_doc} if "text" in root_doc else {}
     expected = OrderedDict()
@@ -170,27 +188,99 @@ def prefetch_text(pages, root_doc, opts):
         if pg["parentDocumentId"]:
             expected.setdefault(pg["parentDocumentId"], set()).add(pg["id"])
     for parent, kids in expected.items():
-        offset = 0
+        offset, previous_ids = 0, None
         while True:
             if opts.delay:
                 time.sleep(opts.delay)
             try:
                 batch = call("documents.list",
                              {"parentDocumentId": parent, "limit": 100, "offset": offset},
-                             opts.verbose)
+                             opts.verbose, attempts=1)
             except ApiError as exc:
                 if opts.verbose:
-                    log(f"batch read under {parent} failed ({exc}); reading those pages one by one")
-                break
+                    log(f"batch read failed ({exc}); reading remaining pages one by one")
+                return docs
             if not isinstance(batch, list):
-                break
+                return docs
+            ids = [d.get("id") for d in batch if isinstance(d, dict)]
+            if ids == previous_ids:
+                break       # server ignored offset; stop paging this parent
+            previous_ids = ids
             for d in batch:
-                if isinstance(d, dict) and d.get("id") in kids and "text" in d:
+                if isinstance(d, dict) and d.get("id") in kids and isinstance(d.get("text"), str):
                     docs[d["id"]] = d
             if len(batch) < 100 or kids.issubset(docs):
                 break
             offset += 100
     return docs
+
+
+def read_page(pg, opts):
+    if opts.delay:
+        time.sleep(opts.delay)
+    doc = call("documents.info", {"id": pg["id"]}, opts.verbose)
+    if not isinstance(doc, dict) or not isinstance(doc.get("text"), str):
+        raise ApiError("documents.info returned no page text")
+    return doc
+
+
+def sweep(opts, pattern):
+    """Run the sweep; returns (exit_code, output_lines)."""
+    pages, root_doc = discover(opts.args[0], opts.verbose)
+    if len(pages) > opts.max_pages:
+        log(f"ERROR: tree has {len(pages)} pages, over --max-pages {opts.max_pages}; "
+            "re-run with a higher --max-pages")
+        return EXIT_TOO_BIG, []
+    if opts.verbose:
+        log(f"{len(pages)} page(s) under '{pages[0]['title']}'")
+
+    if opts.list:
+        return 0, [f"{'  ' * pg['depth']}{pg['title']}\t{pg['url']}" for pg in pages]
+
+    docs = prefetch_text(pages, root_doc, opts)
+    if opts.verbose:
+        log(f"{len(docs)} of {len(pages)} page(s) read in batches")
+    out, failed, streak, matches, matched_pages = [], [], 0, 0, 0
+    for pg in pages:
+        doc = docs.get(pg["id"])
+        if doc is None:
+            try:
+                doc = read_page(pg, opts)
+                streak = 0
+            except ApiError as exc:
+                if not opts.keep_going:
+                    log(f"ERROR: reading '{pg['title']}' ({pg['id']}): {exc}")
+                    return EXIT_API, []
+                failed.append(pg)
+                streak += 1
+                log(f"WARN: skipped '{pg['title']}' ({pg['id']}): {exc}")
+                if streak >= MAX_CONSECUTIVE_FAILURES:
+                    log(f"ERROR: {streak} pages in a row failed; the wiki looks unavailable")
+                    return EXIT_API, []
+                continue
+        text = doc["text"]
+        if opts.jsonl:
+            rec = dict(pg, updatedAt=doc.get("updatedAt"), textLen=len(text), text=text)
+            out.append(json.dumps(rec, ensure_ascii=False))
+            continue
+        hit = False
+        for lineno, line in enumerate(text.splitlines(), 1):
+            if pattern.search(line):
+                hit = True
+                matches += 1
+                out.append(f"{pg['depth']}\t{pg['title']}\t{pg['url']}\t{lineno}\t{line}")
+        matched_pages += hit
+
+    if not opts.jsonl:
+        log(f"{len(pages) - len(failed)} of {len(pages)} page(s) searched; "
+            f"{matches} match(es) on {matched_pages} page(s)")
+    if failed:
+        log(f"INCOMPLETE: {len(failed)} page(s) not fetched: "
+            + ", ".join(f"{f['title']} ({f['id']})" for f in failed))
+        return EXIT_PARTIAL, out
+    if opts.jsonl:
+        return 0, out
+    return (EXIT_MATCH if matches else EXIT_NO_MATCH), out
 
 
 def main(argv):
@@ -214,11 +304,10 @@ def main(argv):
         return 0
 
     listing = opts.list or opts.jsonl
-    want = 1 if listing else 2
     if opts.list and opts.jsonl:
         log("--list and --jsonl are mutually exclusive")
         return EXIT_USAGE
-    if len(opts.args) != want:
+    if len(opts.args) != (1 if listing else 2):
         log(f"expected {'<root>' if listing else '<root> <pattern>'}; run with --help")
         return EXIT_USAGE
     if not opts.args[0].strip():
@@ -237,64 +326,16 @@ def main(argv):
             return EXIT_USAGE
 
     try:
-        pages, root_doc = discover(opts.args[0], opts.verbose)
+        code, out = sweep(opts, pattern)
     except ApiError as exc:
         log(f"ERROR: {exc}")
         return EXIT_API
-    if len(pages) > opts.max_pages:
-        log(f"ERROR: tree has {len(pages)} pages, over --max-pages {opts.max_pages}")
-        return EXIT_USAGE
-    if opts.verbose:
-        log(f"{len(pages)} page(s) under '{pages[0]['title']}'")
-
-    if opts.list:
-        for pg in pages:
-            print(f"{'  ' * pg['depth']}{pg['title']}\t{pg['url']}")
-        return 0
-
-    docs = prefetch_text(pages, root_doc, opts)
-    if opts.verbose:
-        log(f"{len(docs)} of {len(pages)} page(s) read in batches")
-    failed, matches, matched_pages = [], 0, 0
-    for pg in pages:
-        doc = docs.get(pg["id"])
-        if doc is None:
-            if opts.delay:
-                time.sleep(opts.delay)
-            try:
-                doc = call("documents.info", {"id": pg["id"]}, opts.verbose)
-            except ApiError as exc:
-                if not opts.keep_going:
-                    log(f"ERROR: fetching '{pg['title']}' ({pg['id']}): {exc}")
-                    log("aborting so a partial sweep is not mistaken for a complete one; "
-                        "rerun, or pass --keep-going")
-                    return EXIT_API
-                failed.append(pg)
-                log(f"WARN: skipped '{pg['title']}' ({pg['id']}): {exc}")
-                continue
-        text = (doc or {}).get("text") or ""
-        if opts.jsonl:
-            rec = dict(pg, updatedAt=(doc or {}).get("updatedAt"), textLen=len(text), text=text)
-            print(json.dumps(rec, ensure_ascii=False))
-            continue
-        hit = False
-        for lineno, line in enumerate(text.splitlines(), 1):
-            if pattern.search(line):
-                hit = True
-                matches += 1
-                print(f"{pg['depth']}\t{pg['title']}\t{pg['url']}\t{lineno}\t{line}")
-        matched_pages += hit
-
-    if not opts.jsonl:
-        log(f"{len(pages) - len(failed)} of {len(pages)} page(s) searched; "
-            f"{matches} match(es) on {matched_pages} page(s)")
-    if failed:
-        log(f"INCOMPLETE: {len(failed)} page(s) not fetched: "
-            + ", ".join(f"{f['title']} ({f['id']})" for f in failed))
-        return EXIT_PARTIAL
-    if opts.jsonl:
-        return 0
-    return EXIT_MATCH if matches else EXIT_NO_MATCH
+    except Exception as exc:  # an unexpected response shape must never read as "no matches"
+        log(f"ERROR: unexpected {exc!r}")
+        return EXIT_API
+    if out:
+        sys.stdout.write("\n".join(out) + "\n")
+    return code
 
 
 if __name__ == "__main__":
