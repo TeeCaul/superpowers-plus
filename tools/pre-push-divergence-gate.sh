@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# -----------------------------------------------------------------------------
-# pre-push-divergence-gate.sh
+# =============================================================================
+# tools/pre-push-divergence-gate.sh -- pre-push Gate 8
 #
 # PURPOSE: Refuse a push whose branch is missing commits that are already on
 #          the branch it will merge into. A branch cut from dev that keeps
@@ -10,9 +10,9 @@
 #
 # TARGET, per pushed branch (the remote ref name, not the local one):
 #   dev, promote/*   -> main   (a promotion must already contain main)
-#   *sync-dev-with-main*
-#                    -> main   (the post-release sync branch is cut from main
-#                               and merged into dev; see AGENTS.md)
+#   sync/*, */sync-*, sync-*
+#                    -> main   (a sync branch is cut from main and merged into
+#                               dev, e.g. chore/sync-dev-with-main; AGENTS.md)
 #   main             -> none   (main is the root of the flow)
 #   anything else    -> dev
 #
@@ -22,8 +22,14 @@
 #
 # OVERRIDE: DIVERGENCE_GATE=off git push   (prints a note, checks nothing)
 #
-# OFFLINE: if the target cannot be fetched, the gate warns and lets the push
-#   through. A stale local ref is never used as the answer. A push to a URL
+# REMEDY printed when behind: `git merge <remote>/main` for a main target (a
+#   promotion or sync must never be rebased: that rewrites reviewed commits),
+#   `git rebase <remote>/dev` otherwise, plus a lease-protected force push when
+#   the branch already exists on the remote.
+#
+# OFFLINE: if the target cannot be fetched, the gate prints git's reason and
+#   lets the push through. A shallow clone is not checked either: its
+#   truncated history would make every target look missing. A stale local ref is never used as the answer. A push to a URL
 #   rather than a configured remote is not checked either (there is no
 #   remote-tracking ref to compare with).
 #
@@ -34,7 +40,7 @@
 # EXIT:    0 = every pushed branch contains its target (or was skipped)
 #          1 = at least one pushed branch is behind its target
 #          2 = usage error
-# -----------------------------------------------------------------------------
+# =============================================================================
 set -euo pipefail
 
 # Git sets GIT_DIR for hooks under a linked worktree; it would override the
@@ -43,7 +49,7 @@ unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX
 
 usage() {
     echo "Usage: tools/pre-push-divergence-gate.sh [<remote-name>] < <pre-push stdin>"
-    awk 'NR>2 && /^#/ {sub(/^# ?/,""); if ($0 !~ /^-+$/) print; next} NR>2 {exit}' "${BASH_SOURCE[0]}"
+    awk 'NR>2 && /^#/ {sub(/^# ?/,""); if ($0 !~ /^=+$/) print; next} NR>2 {exit}' "${BASH_SOURCE[0]}"
 }
 
 case "${1:-}" in
@@ -52,7 +58,7 @@ case "${1:-}" in
 esac
 REMOTE="${1:-origin}"
 
-ZERO_SHA="0000000000000000000000000000000000000000"
+NULL_SHA="0000000000000000000000000000000000000000"  # git: ref deleted
 EXEMPT_PREFIXES=(hotfix/ release/ backport/ tagged-release/)
 
 if [[ "${DIVERGENCE_GATE:-on}" == "off" ]]; then
@@ -66,9 +72,9 @@ target_for() {
         [[ "$branch" == "$p"* ]] && { echo "exempt:$p"; return; }
     done
     case "$branch" in
-        main)                               echo "" ;;
-        dev|promote/*|*sync-dev-with-main*) echo "main" ;;
-        *)                                  echo "dev" ;;
+        main)                                 echo "" ;;
+        dev|promote/*|sync/*|*/sync-*|sync-*) echo "main" ;;
+        *)                                    echo "dev" ;;
     esac
 }
 
@@ -77,13 +83,18 @@ if ! git remote get-url "$REMOTE" >/dev/null 2>&1; then
     exit 0
 fi
 
+if [[ "$(git rev-parse --is-shallow-repository 2>/dev/null)" == "true" ]]; then
+    echo "  divergence gate: shallow clone, history is incomplete, not checked"
+    exit 0
+fi
+
 BEHIND=0
 FETCHED=" "   # targets fetched successfully this run, space-delimited
 FAILED=" "    # targets whose fetch failed this run
 
-while read -r _local_ref local_sha remote_ref _remote_sha; do
+while read -r _local_ref local_sha remote_ref remote_sha; do
     [[ -n "${local_sha:-}" ]] || continue
-    [[ "$local_sha" == "$ZERO_SHA" ]] && continue          # branch deletion
+    [[ "$local_sha" == "$NULL_SHA" ]] && continue          # branch deletion
     [[ "$remote_ref" == refs/heads/* ]] || continue        # tags, notes, etc.
     branch="${remote_ref#refs/heads/}"
     target="$(target_for "$branch")"
@@ -102,11 +113,17 @@ while read -r _local_ref local_sha remote_ref _remote_sha; do
         continue
     fi
     if [[ "$FETCHED" != *" $target "* ]]; then
-        if git fetch --quiet "$REMOTE" "refs/heads/$target:refs/remotes/$REMOTE/$target" 2>/dev/null; then
+        # "+": a force-rewritten target must still update the tracking ref, or
+        # the comparison below would run against the stale one. No prompts: a
+        # hook must never wait for a password or key touch.
+        if fetch_err="$(GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh} -o BatchMode=yes" \
+                git fetch --quiet "$REMOTE" "+refs/heads/$target:refs/remotes/$REMOTE/$target" \
+                </dev/null 2>&1)"; then
             FETCHED+="$target "
         else
             FAILED+="$target "
-            echo "  ⚠ $branch: could not fetch $REMOTE/$target (offline?), divergence not checked"
+            echo "  ⚠ $branch: could not fetch $REMOTE/$target, divergence not checked"
+            printf '%s\n' "$fetch_err" | sed -n '1,3s/^/      git: /p'
             continue
         fi
     fi
@@ -120,7 +137,14 @@ while read -r _local_ref local_sha remote_ref _remote_sha; do
         word="commits"; [[ "$missing" -eq 1 ]] && word="commit"
         echo "  ❌ $branch is missing $missing $word that $REMOTE/$target already has."
         echo "     Bring them in, re-run your checks, then push again:"
-        echo "       git rebase $REMOTE/$target"
+        if [[ "$target" == "main" ]]; then
+            echo "       git merge $REMOTE/main    (merge, never rebase: a promotion or sync keeps its reviewed commits)"
+        else
+            echo "       git rebase $REMOTE/$target"
+            if [[ -n "${remote_sha:-}" && "$remote_sha" != "$NULL_SHA" ]]; then
+                echo "       git push --force-with-lease    ($branch already exists on $REMOTE)"
+            fi
+        fi
         echo "     (Override for this push only: DIVERGENCE_GATE=off git push)"
     else
         echo "  ✓ $branch: contains $REMOTE/$target"

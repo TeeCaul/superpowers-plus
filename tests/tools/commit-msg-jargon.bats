@@ -44,7 +44,7 @@ stage() { mkdir -p "$(dirname "$1")"; echo x > "$1"; git add "$1"; }
 
 @test "tooling names in subject and body are warned about, with line numbers" {
   stage lib/a.js
-  printf 'Fix parser after PHR\n\nThe battery passed; sentinel written.\nUsed code-review-battery and harsh review.\n' > "$MSG"
+  printf 'Fix parser after PHR round 2\n\nThe battery passed; sentinel written.\nReviewed with code-review-battery and harsh review.\n' > "$MSG"
   run --separate-stderr "$TOOL" "$MSG"
   [ "$status" -eq 0 ]
   [[ "$stderr" == *"line 1 [PHR]"* ]]
@@ -94,4 +94,34 @@ stage() { mkdir -p "$(dirname "$1")"; echo x > "$1"; git add "$1"; }
   run --separate-stderr bash tools/commit-msg "$MSG"
   [ "$status" -eq 0 ]
   [[ "$stderr" == *"names review tooling"* ]]
+}
+
+@test "a tool named as the topic of a change does not warn" {
+  stage lib/a.js
+  printf 'Fix the sentinel parser for tree: entries\n\nThe PHR skill reads its threshold from one place now.\n' > "$MSG"
+  run --separate-stderr "$TOOL" "$MSG"
+  [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
+}
+
+@test "the verbose diff below the scissors line is not scanned" {
+  stage lib/a.js
+  printf 'Fix parser\n\n# ------------------------ >8 ------------------------\n+battery passed in the diff\n' > "$MSG"
+  run --separate-stderr "$TOOL" "$MSG"
+  [ -z "$stderr" ]
+}
+
+@test "a message-only amend uses the amended commit's files for the exemption" {
+  stage tools/run-x.sh
+  git commit -q -m "add runner"
+  printf 'Teach the battery: findings now pass through\n' > "$MSG"
+  run --separate-stderr "$TOOL" "$MSG"
+  [ -z "$stderr" ]
+}
+
+@test "a last paragraph that is not standard trailers is still scanned" {
+  stage lib/a.js
+  printf 'Fix parser\n\nNote: the battery passed again.\n' > "$MSG"
+  run --separate-stderr "$TOOL" "$MSG"
+  [[ "$stderr" == *"line 3 [battery]"* ]]
 }

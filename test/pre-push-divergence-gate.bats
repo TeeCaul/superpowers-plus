@@ -184,3 +184,71 @@ refs/heads/feat/fresh $(git rev-parse feat/fresh) refs/heads/feat/fresh $ZERO_SH
     [ "$status" -eq 0 ]
     [ -n "$(git ls-remote origin refs/heads/feat/stale)" ]
 }
+
+@test "a force-rewritten target is still fetched and compared" {
+    git checkout -q -b feat/x origin/dev
+    git -C "$OTHER" fetch -q origin
+    git -C "$OTHER" checkout -q -B dev origin/dev
+    git -C "$OTHER" commit -q --allow-empty --amend -m rewritten-root
+    git -C "$OTHER" push -q --force origin dev
+    run bash "$SCRIPT" origin <<< "$(line feat/x)"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"missing 1 commit"* ]]
+}
+
+@test "a missing target branch prints git's reason and passes" {
+    git push -q origin --delete dev
+    git checkout -q -b feat/x
+    run bash "$SCRIPT" origin <<< "$(line feat/x)"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"could not fetch origin/dev"* ]]
+    [[ "$output" == *"git: "* ]]
+}
+
+@test "a shallow clone is not checked" {
+    advance dev 2
+    shallow="$BATS_TEST_TMPDIR/shallow"
+    git clone -q --depth 1 --branch dev "file://$ORIGIN" "$shallow" 2>/dev/null
+    cd "$shallow"
+    git checkout -q -b feat/x
+    run bash "$SCRIPT" origin <<< "$(line feat/x)"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"shallow clone"* ]]
+}
+
+@test "sync branch names target main; names that merely contain sync do not" {
+    advance dev 2
+    git fetch -q origin
+    for b in sync/main-into-dev-1 chore/sync-dev-after-retirement sync-dev; do
+        git checkout -q -B "$b" origin/main
+        run bash "$SCRIPT" origin <<< "$(line "$b")"
+        [ "$status" -eq 0 ]
+        [[ "$output" == *"contains origin/main"* ]]
+    done
+    git checkout -q -B feat/async-x origin/main
+    run bash "$SCRIPT" origin <<< "$(line feat/async-x)"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"origin/dev"* ]]
+}
+
+@test "a main target is told to merge, never to rebase" {
+    git checkout -q -b promote/r1 origin/dev
+    advance main 1
+    run bash "$SCRIPT" origin <<< "$(line promote/r1)"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"git merge origin/main"* ]]
+    [[ "$output" != *"git rebase"* ]]
+}
+
+@test "a branch already on the remote is told to use a lease-protected force push" {
+    git checkout -q -b feat/x origin/dev
+    git commit -q --allow-empty -m work
+    git push -q origin feat/x
+    advance dev 1
+    run bash "$SCRIPT" origin <<< "refs/heads/feat/x $(git rev-parse HEAD) refs/heads/feat/x $(git rev-parse origin/feat/x)"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"git rebase origin/dev"* ]]
+    [[ "$output" == *"with-lease"* ]]
+    run bash "$SCRIPT" origin <<< "$(line feat/new)"
+    [[ "$output" != *"with-lease"* ]]
+}
