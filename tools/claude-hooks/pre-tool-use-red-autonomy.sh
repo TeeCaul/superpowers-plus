@@ -13,9 +13,10 @@
 # approval. File-based tokens are single-use; transcript-based tokens are
 # reusable (phrase persists in transcript). Consumed hashes stored in
 # ~/.claude/consumed/.
-# Transcript scan checks the last 10 non-empty user messages (most recent
-# first, not just the single last one -- a real approval can otherwise scroll
-# out of view behind a burst of tool-result/notification messages), across 3
+# Transcript scan checks the last 10 messages the HUMAN typed (most recent
+# first). Only human-authored records count -- see HUMAN_MESSAGES_PY below:
+# subagent reports and task notifications are user-role records too, and must
+# neither grant nor revoke approval. Shapes read, across 4
 # message shapes: legacy {"role":"user",...}, current Claude {"type":"user",
 # "message":{"role":"user",...}}, Cursor Agent {"role":"user","message":{"content":...}},
 # and mid-turn queued commands
@@ -310,6 +311,185 @@ sys.stdout.write(s)
 PYEOF
 }
 
+# HUMAN_MESSAGES_PY: the ONE definition of "a message the human typed", shared
+# by every transcript scan in this hook (push/release approval, strict-disable
+# approval, and the target-binding escape valve). Each scan used to carry its
+# own copy of the user-message reader, and all three counted every user-ROLE
+# record as the human. Claude Code also writes subagent hand-backs
+# (origin.kind "peer", isMeta true), background-task notifications
+# (origin.kind "task-notification"), and `!` / local-command output (no
+# origin) as user-role records. So a reviewer report containing "approve push"
+# could authorize a push, and one containing a revoke phrase could cancel the
+# human's real approval (both seen 2026-10-03).
+#
+# Current transcripts mark the human's prompts with origin.kind "human". When
+# any record in the file carries an origin, only those prompts count, plus
+# the human's AskUserQuestion answers, read from the structured
+# toolUseResult.answers (never from the rendered text, whose question side
+# Claude writes and could shape to look like an answer). A transcript with no
+# origin anywhere predates the field or comes from another client (Cursor,
+# legacy JSONL, Augment); there the older shape rules apply. Anything unread
+# simply cannot approve, so unknown shapes fail closed.
+HUMAN_MESSAGES_PY=$(cat <<'PYLIB'
+import json, re
+
+# Claude writes the AskUserQuestion questions and option labels, so a label
+# reading "approve push" on an unrelated question ("Which tests?") would let
+# one click grant approval. An answer counts only when its question is itself
+# about pushing, merging, releasing or the strict-check toggle.
+_APPROVAL_QUESTION = re.compile(
+    r"\b(push(es|ed|ing)?|merg(e|es|ed|ing)|releas(e|es|ed|ing)|promot\w*|deploy\w*|ship\w*|strict)\b",
+    re.IGNORECASE)
+
+def _structured_answers(obj):
+    tur = obj.get("toolUseResult")
+    answers = tur.get("answers") if isinstance(tur, dict) else None
+    if not isinstance(answers, dict):
+        return ""
+    return " ".join(v for k, v in answers.items()
+                    if isinstance(v, str) and isinstance(k, str) and _APPROVAL_QUESTION.search(k))
+
+# Records an origin-less (older or SDK) transcript still marks as not typed by
+# the human: harness wrappers, background-task results, sub-agent threads.
+_HARNESS_PREFIXES = ("<task-notification>", "<bash-input>", "<bash-stdout>", "<bash-stderr>",
+                     "<local-command-stdout>", "<local-command-caveat>", "<command-name>",
+                     "<command-message>", "<system-reminder>")
+_NOT_HUMAN_TURNS = {"peer", "task_notification", "task-notification", "auto_continuation",
+                    "auto-continuation", "system"}
+
+def _first_text(content):
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        for p in content:
+            if isinstance(p, dict) and isinstance(p.get("text"), str):
+                return p["text"]
+    return ""
+
+def _legacy_not_human(obj, content):
+    if obj.get("isSidechain") is True:
+        return True
+    if obj.get("promptSource") == "system" or obj.get("turnOrigin") in _NOT_HUMAN_TURNS:
+        return True
+    return _first_text(content).lstrip().startswith(_HARNESS_PREFIXES)
+
+def _text(content, ask_ids, obj, modern):
+    """Text of a user-role record: plain text parts, plus answers to an
+    AskUserQuestion this session's assistant asked."""
+    if isinstance(content, str):
+        return content
+    parts = []
+    if isinstance(content, list):
+        for p in content:
+            if not isinstance(p, dict):
+                continue
+            if isinstance(p.get("text"), str):
+                parts.append(p["text"])
+            elif p.get("type") == "tool_result" and isinstance(p.get("tool_use_id"), str) \
+                    and p.get("tool_use_id") in ask_ids:
+                # Structured answers only (headless SDK sessions write
+                # toolUseResult but never origin). The rendered text is never
+                # read: its question side is Claude's and could be shaped to
+                # look like an answer. Without toolUseResult, nothing counts.
+                parts.append(_structured_answers(obj))
+    return " ".join(parts)
+
+def _ask_answer_only(content, ask_ids, obj):
+    # Modern transcripts: a no-origin user record is read ONLY for the
+    # human's AskUserQuestion answers; its other text (tool output, command
+    # stdout, summaries) is not the human typing.
+    if not isinstance(content, list):
+        return ""
+    return " ".join(_structured_answers(obj) for p in content
+                    if isinstance(p, dict) and p.get("type") == "tool_result"
+                    and isinstance(p.get("tool_use_id"), str) and p.get("tool_use_id") in ask_ids)
+
+def _augment_messages(path):
+    # Augment Agent sessions are one JSON document with chatHistory turns.
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            if f.read(1) != "{":
+                return None
+            f.seek(0)
+            doc = json.load(f)
+    except Exception:
+        return None
+    if not isinstance(doc, dict) or "chatHistory" not in doc:
+        return None
+    msgs = []
+    for turn in doc.get("chatHistory", []):
+        if isinstance(turn, dict) and turn.get("type") == "human":
+            t = _text(turn.get("content", ""), set(), {}, False)
+            if t.strip():
+                msgs.append(t)
+    return msgs
+
+def _records(path):
+    out = []
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(obj, dict):
+                out.append(obj)
+    return out
+
+def human_messages(path):
+    """Texts the human typed, oldest first."""
+    aug = _augment_messages(path)
+    if aug is not None:
+        return aug
+    records = _records(path)
+    modern = any("origin" in o for o in records
+                 if o.get("type") == "user" or o.get("role") == "user")
+    msgs, ask_ids = [], set()
+    for obj in records:
+        # Assistant turns: remember AskUserQuestion ids so the human's
+        # answers can be read from the matching tool_result records.
+        ac = None
+        if obj.get("role") == "assistant":
+            ac = obj.get("content")
+        elif obj.get("type") == "assistant" and isinstance(obj.get("message"), dict):
+            ac = obj["message"].get("content")
+        if isinstance(ac, list):
+            for p in ac:
+                if isinstance(p, dict) and p.get("type") == "tool_use" \
+                        and p.get("name") == "AskUserQuestion" and isinstance(p.get("id"), str):
+                    ask_ids.add(p["id"])
+            continue
+        t = ""
+        if obj.get("type") == "attachment":
+            # A message typed while Claude is mid-turn lands here first.
+            att = obj.get("attachment")
+            if isinstance(att, dict) and att.get("type") == "queued_command" \
+                    and isinstance(att.get("origin"), dict) and att["origin"].get("kind") == "human" \
+                    and isinstance(att.get("prompt"), str):
+                t = att["prompt"]
+        elif obj.get("type") == "user" or obj.get("role") == "user":
+            if obj.get("isMeta") is True:
+                continue
+            msg = obj.get("message")
+            content = msg.get("content") if isinstance(msg, dict) and msg.get("content") is not None \
+                else obj.get("content", "")
+            origin = obj.get("origin")
+            if "origin" in obj and origin is not None:
+                if isinstance(origin, dict) and origin.get("kind") == "human":
+                    t = _text(content, ask_ids, obj, modern)
+            elif modern:
+                t = _ask_answer_only(content, ask_ids, obj)
+            elif not _legacy_not_human(obj, content):
+                t = _text(content, ask_ids, obj, modern)
+        if t.strip():
+            msgs.append(t)
+    return msgs
+PYLIB
+)
+
 # Check if command matches any RED pattern. Takes the ALREADY-NORMALIZED
 # command (see NORMALIZED_CMD below) -- normalization happens exactly once,
 # shared with is_strict_disable_action, not per-function.
@@ -462,7 +642,7 @@ if [[ "$IS_STRICT_DISABLE" == "1" ]]; then
     # for a dedicated strict-disable approval/revoke phrase. Deliberately
     # does NOT reuse extract_approval_token's push/release phrase list.
     [[ -f "$TRANSCRIPT" ]] || return 0
-    python3 - "$TRANSCRIPT" <<'EOF' || true
+    { printf '%s\n' "$HUMAN_MESSAGES_PY"; cat <<'EOF'; } | python3 - "$TRANSCRIPT" || true
 import sys, json, re
 
 APPROVAL_PHRASES = [
@@ -474,47 +654,11 @@ REVOKE_PHRASES = [
     r'\brevoke\s+strict[\s-]?disable\b',
     r'\bcancel\s+strict[\s-]?disable\b',
     r'\bdo\s+not\s+disable\s+strict\b',
+    r"\b(?:do\s+not|don'?t|never|not)\s+approve\s+strict[\s-]?disable",
 ]
 
 transcript_path = sys.argv[1]
-recent_user_messages = []
-
-def extract_text(content):
-    if isinstance(content, list):
-        return " ".join(p.get("text","") for p in content if isinstance(p,dict))
-    return content if isinstance(content, str) else ""
-
-with open(transcript_path, encoding='utf-8', errors='replace') as f:
-    for line in f:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            obj = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        t = ""
-        if obj.get("role") == "user":
-            # Cursor: content nested under message; Claude legacy: top-level content
-            msg = obj.get("message")
-            if isinstance(msg, dict) and msg.get("content") is not None:
-                t = extract_text(msg.get("content", ""))
-            else:
-                t = extract_text(obj.get("content", ""))
-        elif obj.get("type") == "user":
-            msg = obj.get("message", {})
-            if isinstance(msg, dict) and msg.get("role") == "user":
-                t = extract_text(msg.get("content", ""))
-        elif obj.get("type") == "attachment":
-            att = obj.get("attachment", {})
-            if isinstance(att, dict) and att.get("type") == "queued_command":
-                origin = att.get("origin", {})
-                if isinstance(origin, dict) and origin.get("kind") == "human":
-                    p = att.get("prompt", "")
-                    if isinstance(p, str):
-                        t = p
-        if t.strip():
-            recent_user_messages.append(t)
+recent_user_messages = human_messages(transcript_path)
 
 if not recent_user_messages:
     sys.exit(0)
@@ -612,7 +756,7 @@ extract_approval_token() {
   # undocumented, likely fail-open exit code instead of just producing no
   # output, which the caller's case-statement already treats as "no
   # approval found" (code-review-battery, 2026-07-12).
-  python3 - "$TRANSCRIPT" <<'EOF' || true
+  { printf '%s\n' "$HUMAN_MESSAGES_PY"; cat <<'EOF'; } | python3 - "$TRANSCRIPT" || true
 import sys, json, re
 
 APPROVAL_PHRASES = [
@@ -628,155 +772,12 @@ REVOKE_PHRASES = [
     r'\brevoke\s+push\b',
     r'\bcancel\s+push\b',
     r'\bdo\s+not\s+push\b',
+    r"\b(?:do\s+not|don'?t|never|not)\s+approve\s+(?:the\s+)?push",
     r'\bstop\s+pushing\b',
 ]
 
 transcript_path = sys.argv[1]
-recent_user_messages = []
-
-# tool_use_id -> True for every AskUserQuestion call seen so far. An
-# AskUserQuestion answer arrives as a user-role turn whose content is a
-# tool_result block (not any of the four plain-chat shapes below) --
-# extract_text() alone never saw it, since a tool_result's payload lives
-# under "content", not "text". Scoped to AskUserQuestion specifically (by
-# tool_use_id), NOT to every tool_result: a Bash/Read/Grep result can
-# contain arbitrary text (a file, a log, a ticket description) that
-# happens to match an approval phrase with no genuine human intent behind
-# it -- only an answer to a question Claude itself asked constitutes
-# approval. Only string ids are ever added/matched: a non-string id (a
-# list, from a malformed or adversarial transcript) is skipped rather
-# than crashing set.add() on an unhashable type, and never collides with
-# another block's missing id (both would otherwise resolve to Python
-# None).
-ask_user_question_ids = set()
-
-# Real rendered format (verified against a live Claude Code transcript):
-# the tool_result content is a single string, e.g.
-#   Your questions have been answered: "<question>"="<answer>". You can
-#   now continue with these answers in mind.
-# Scanning that whole string for approval phrases lets Claude's own
-# QUESTION wording grant approval regardless of the human's actual
-# answer -- isolate only the quoted answer-side value(s) of each
-# "question"="answer" pair. A string with no such pair (e.g. a synthetic
-# timeout message, which is not a genuine human answer at all) yields no
-# extracted text and so can never grant approval on its own.
-def extract_answer_only(text):
-    if not isinstance(text, str):
-        return ""
-    return " ".join(re.findall(r'"[^"]*"\s*=\s*"([^"]*)"', text))
-
-def extract_text(content):
-    if isinstance(content, list):
-        parts = []
-        for p in content:
-            if not isinstance(p, dict):
-                continue
-            if p.get("text"):
-                parts.append(p["text"])
-            elif p.get("type") == "tool_result" and isinstance(p.get("tool_use_id"), str) and p.get("tool_use_id") in ask_user_question_ids:
-                raw = p.get("content", "")
-                if isinstance(raw, list):
-                    raw = extract_text(raw)
-                parts.append(extract_answer_only(raw))
-        return " ".join(parts)
-    return content if isinstance(content, str) else ""
-
-# Augment Agent sessions are a single JSON document, not JSONL. Detect
-# by peeking at the first non-whitespace byte -- '{' means single-object (Augment
-# or malformed Claude); '[' would be a JSON array; anything else (including the
-# correct '\n' JSONL first byte) falls through to the normal JSONL loop.
-_skip_jsonl = False
-def _try_augment_shape(path):
-    """Return list of user-message strings if file matches Augment chatHistory shape; else []."""
-    try:
-        with open(path, encoding='utf-8', errors='replace') as _f:
-            first_byte = _f.read(1)
-            if first_byte != '{':
-                return []
-            _f.seek(0)
-            doc = json.load(_f)
-    except Exception:
-        return []
-    msgs = []
-    for turn in doc.get("chatHistory", []):
-        if not isinstance(turn, dict):
-            continue
-        if turn.get("type") != "human":
-            continue
-        content = turn.get("content", "")
-        if isinstance(content, str) and content.strip():
-            msgs.append(content)
-        elif isinstance(content, list):
-            t = extract_text(content)
-            if t.strip():
-                msgs.append(t)
-    return msgs
-
-_augment_msgs = _try_augment_shape(transcript_path)
-if _augment_msgs:
-    recent_user_messages = _augment_msgs
-    _skip_jsonl = True
-
-if not _skip_jsonl:
-    with open(transcript_path, encoding='utf-8', errors='replace') as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            # Two assistant shapes, mirroring the user-message shapes below:
-            # legacy {"role":"assistant","content":...} and current
-            # {"type":"assistant","message":{"role":"assistant","content":...}}.
-            assistant_content = None
-            if obj.get("role") == "assistant":
-                assistant_content = obj.get("content")
-            elif obj.get("type") == "assistant":
-                amsg = obj.get("message", {})
-                if isinstance(amsg, dict) and amsg.get("role") == "assistant":
-                    assistant_content = amsg.get("content")
-            if isinstance(assistant_content, list):
-                for p in assistant_content:
-                    if isinstance(p, dict) and p.get("type") == "tool_use" and p.get("name") == "AskUserQuestion":
-                        tid = p.get("id")
-                        if isinstance(tid, str):
-                            ask_user_question_ids.add(tid)
-            t = ""
-            # Support four transcript shapes:
-            # Legacy: {"role":"user","content":...}
-            # Current Claude: {"type":"user","message":{"role":"user","content":...}}
-            # Cursor Agent: {"role":"user","message":{"content":[{"type":"text","text":...}]}}
-            #   -- role at top level but content nested under message (no type:user).
-            # Mid-turn queued command: {"type":"attachment","attachment":
-            #   {"type":"queued_command","prompt":"...","origin":{"kind":"human"}}}
-            # -- messages sent while Claude is still working on a turn are queued
-            # and surfaced in this shape, invisible to the first two checks.
-            # Confirmed via a real session transcript where "approve push" sent
-            # mid-turn never satisfied this scan, but the identical phrase sent
-            # moments later as a fresh standalone message did. Gated on
-            # origin.kind == "human" so only user-authored queued commands count.
-            if obj.get("role") == "user":
-                msg = obj.get("message")
-                if isinstance(msg, dict) and msg.get("content") is not None:
-                    t = extract_text(msg.get("content", ""))
-                else:
-                    t = extract_text(obj.get("content", ""))
-            elif obj.get("type") == "user":
-                msg = obj.get("message", {})
-                if isinstance(msg, dict) and msg.get("role") == "user":
-                    t = extract_text(msg.get("content", ""))
-            elif obj.get("type") == "attachment":
-                att = obj.get("attachment", {})
-                if isinstance(att, dict) and att.get("type") == "queued_command":
-                    origin = att.get("origin", {})
-                    if isinstance(origin, dict) and origin.get("kind") == "human":
-                        p = att.get("prompt", "")
-                        if isinstance(p, str):
-                            t = p
-            if t.strip():
-                recent_user_messages.append(t)
+recent_user_messages = human_messages(transcript_path)
 
 if not recent_user_messages:
     sys.exit(0)
@@ -813,7 +814,7 @@ check_target_binding() {
   # explicit "deny" rather than relying on empty stdout happening to not
   # equal "allow" (code-review-battery, 2026-07-12: the implicit version of
   # this contract was real but undocumented and untested).
-  python3 - "$TRANSCRIPT" "$CMD" <<'EOF2' || echo "deny"
+  { printf '%s\n' "$HUMAN_MESSAGES_PY"; cat <<'EOF2'; } | python3 - "$TRANSCRIPT" "$CMD" || echo "deny"
 import sys, json, re
 
 transcript_path, current_cmd = sys.argv[1], sys.argv[2]
@@ -990,30 +991,12 @@ REVOKE_PHRASES = [
     r'\brevoke\s+push\b',
     r'\bcancel\s+push\b',
     r'\bdo\s+not\s+push\b',
+    r"\b(?:do\s+not|don'?t|never|not)\s+approve\s+(?:the\s+)?push",
     r'\bstop\s+pushing\b',
 ]
 
 def _user_texts(path):
-    # Re-scan for the named-target escape valve below. Mirrors Method 2's
-    # own phrase-matching scan (extract_approval_token, a separate python
-    # invocation with no shared state) rather than a shared helper --
-    # tracked as follow-up factoring, see header comment.
-    texts = []
-    with open(path, encoding='utf-8', errors='replace') as f2:
-        for line2 in f2:
-            line2 = line2.strip()
-            if not line2:
-                continue
-            try:
-                obj2 = json.loads(line2)
-            except json.JSONDecodeError:
-                continue
-            uc = _user_content(obj2)
-            if uc is not None:
-                t = _extract_text(uc)
-                if t.strip():
-                    texts.append(t)
-    return texts
+    return human_messages(path)
 
 def _named_target_escape_valve(path, target):
     # Narrow fallback, consulted ONLY when target-binding would otherwise
@@ -1065,6 +1048,8 @@ with open(transcript_path, encoding='utf-8', errors='replace') as f:
             continue
         try:
             obj = json.loads(line)
+            if not isinstance(obj, dict):
+                continue
         except json.JSONDecodeError:
             continue
         a_content = _assistant_content(obj)
