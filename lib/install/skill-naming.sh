@@ -74,13 +74,14 @@ _build_dest_name_index() {
     for root in "$@"; do
         search_root="$root"
         [[ -d "$root/skills" ]] && search_root="$root/skills"
+        search_root="${search_root%/}"
         while IFS= read -r skill_md; do
             # Skip a nested worktree checkout WITHIN this subtree — relative
             # to search_root, not a bare substring match against the full
             # path, which would wrongly exclude everything when the repo
             # itself is checked out under a ".worktrees/" ancestor directory
             # (this repo's own mandatory workflow for all new branches).
-            [[ "${skill_md#"$search_root"/}" == *.worktrees/* ]] && continue
+            [[ "/${skill_md#"$search_root"/}" == */.worktrees/* ]] && continue
             skill_path=$(dirname "$skill_md")
             src_name=$(basename "$skill_path")
             dest_name=$(_skill_dest_name "$skill_path")

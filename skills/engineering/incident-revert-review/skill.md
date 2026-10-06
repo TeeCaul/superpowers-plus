@@ -3,7 +3,7 @@ name: incident-revert-review
 disable-model-invocation: true
 source: superpowers-plus
 augment_menu: true
-triggers: ["review this revert", "reviewing a proposed revert", "should we revert this", "rollback this change", "what does this revert restore", "revert this incident fix"]
+triggers: ["review this revert", "reviewing a proposed revert", "should we revert this incident change", "roll back this incident change", "rollback this incident change", "what does this revert restore", "revert this incident fix"]
 anti_triggers: ["revert a skill change", "undo a local edit", "verify a deployed fix", "git revert HEAD"]
 description: Review a proposed incident revert for the protection it removes, the failure it may restore, and the adjacent path to check. Produce a read-only risk note before the change decision.
 summary: "Use when: evaluating a proposed incident revert or rollback, on any branch or platform."
@@ -39,8 +39,8 @@ When the original change or the incident record is missing, say so instead of gu
 
 1. **Trace both sides of the change.** Read the original issue/PR and proposed reverse diff. State the original problem, the behavior the change added, and the behavior the revert would restore. Distinguish observed behavior from an inferred risk.
 2. **Scope consumers and boundaries.** Apply `blast-radius-check` to touched functions, state transitions, configuration, and callers across affected repos. Inspect the path through the touched boundary before and after the change, including at least one path outside the symptom the revert intends to fix. Record what was searched and what remains unverified.
-3. **Inspect change discipline.** If this repo uses a hotfix-branch convention gated by `hotfix-charter`, check for charter evidence and tell the change author to run its gate before commit if it is pending. The authoring hook cannot be run or inferred by this read-only review. For a UI-created or ordinary-branch revert, state the symptom, diff scope, and review/test evidence without claiming any charter ran.
-4. **Compare the options.** State the likely impact of reverting and of leaving the current behavior in place. Identify any protection the revert removes, the failure it could restore, and at least one plausible adjacent path that could worsen. If no adjacent path can be identified from the sources, mark that gap **unknown**, not safe.
+3. **Inspect change discipline.** If this repo uses a hotfix-branch convention gated by `hotfix-charter`, check for a `HOTFIX-CHARTER.md` on the branch and tell the change author to run its gate before commit if it is pending. The authoring hook cannot be run or inferred by this read-only review. For a UI-created or ordinary-branch revert, state the symptom, diff scope, and review/test evidence without claiming any charter ran.
+4. **Compare the options.** State the likely impact of reverting and of leaving the current behavior in place. Identify any protection the revert removes, the failure it could restore, and at least one plausible adjacent path that could worsen. Check whether data, schema changes, messages, or cache entries written since the original change are still readable by the reverted code; a revert restores code, not state. If no adjacent path can be identified from the sources, mark that gap **unknown**, not safe.
 5. **Prepare verification.** Identify existing tests and the missing scenario, then name immediate checks for both the intended fix and the adjacent path. Name production signals, time windows, and denominators where available. Do not invent a traffic threshold or claim that a successful deploy proves recovery.
 
 ## Output: revert risk note

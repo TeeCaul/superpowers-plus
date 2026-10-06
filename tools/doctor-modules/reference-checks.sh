@@ -139,14 +139,14 @@ if [[ -f "$_REF_NAMING_LIB" ]]; then
 fi
 
 for dir in "${COMPARE_DIRS[@]}"; do
-  search_root="$dir"; [[ -d "$dir/skills" ]] && search_root="$dir/skills"
+  search_root="$dir"; [[ -d "$dir/skills" ]] && search_root="$dir/skills"; search_root="${search_root%/}"
   while IFS= read -r src; do
     # Skip a nested worktree checkout WITHIN this subtree — relative to
     # search_root, not a bare substring match against the full path, which
     # would wrongly exclude everything when the repo itself is checked out
     # under a ".worktrees/" ancestor directory (this repo's own mandatory
     # workflow for all new branches).
-    [[ "${src#"$search_root"/}" == *.worktrees/* ]] && continue
+    [[ "/${src#"$search_root"/}" == */.worktrees/* ]] && continue
     skill=$(basename "$(dirname "$src")")
     install_name="${SOURCE_DEST_NAME[$skill]:-$skill}"
     installed_skill="$INSTALLED_DIR/$install_name/skill.md"
@@ -157,9 +157,9 @@ for dir in "${COMPARE_DIRS[@]}"; do
 done
 
 for dir in "${COMPARE_DIRS[@]}"; do
-  search_root="$dir"; [[ -d "$dir/skills" ]] && search_root="$dir/skills"
+  search_root="$dir"; [[ -d "$dir/skills" ]] && search_root="$dir/skills"; search_root="${search_root%/}"
   while IFS= read -r src_ref; do
-    [[ "${src_ref#"$search_root"/}" == *.worktrees/* ]] && continue
+    [[ "/${src_ref#"$search_root"/}" == */.worktrees/* ]] && continue
     skill_dir=$(basename "$(dirname "$(dirname "$src_ref")")")
     ref_name=$(basename "$src_ref")
     key="${skill_dir}/${ref_name}"
@@ -178,7 +178,7 @@ for dir in "${COMPARE_DIRS[@]}"; do
   # Track overlay skill.md paths
   if [[ "$dir" != "$SP_PLUS_DIR" ]]; then
     while IFS= read -r src; do
-      [[ "${src#"$search_root"/}" == *.worktrees/* ]] && continue
+      [[ "/${src#"$search_root"/}" == */.worktrees/* ]] && continue
       skill=$(basename "$(dirname "$src")")
       OVERLAY_SOURCE[$skill]="$src"
     done < <(find "$search_root" -name "skill.md" -not -path "*/references/*" 2>/dev/null)
