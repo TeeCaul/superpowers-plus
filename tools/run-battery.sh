@@ -81,6 +81,10 @@ Options:
                    Mode this escape hatch still prints a loud warning.
   -h, --help       Show this help
 
+Envelope: build .cr-battery-runs/<HEAD-sha>.json with tools/review-envelope.py
+  (init --kind battery, add-clean, add-finding, resolve, set, check). It runs
+  each evidence command when the claim is written and refuses failing ones.
+
 Bug Fix Review Mode (9.2 threshold):
   Activated when: branch prefix is hotfix/* or fix/<TICKET>-* (configure allowed
   prefixes in .cr-battery-ticket-prefixes), or --mode=bug-fix is passed.
