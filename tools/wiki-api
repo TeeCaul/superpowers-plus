@@ -74,6 +74,10 @@ if [ -z "${OUTLINE_API_URL:-}" ]; then
   echo "ERROR: OUTLINE_API_URL is not set in ~/.codex/.env" >&2
   exit 1
 fi
+# The adapter documents OUTLINE_API_URL as the instance base URL without /api;
+# older setups include it. Accept both so every call lands on <base>/api/<verb>.
+OUTLINE_API_URL="${OUTLINE_API_URL%/}"
+[[ "$OUTLINE_API_URL" == */api ]] || OUTLINE_API_URL="$OUTLINE_API_URL/api"
 export OUTLINE_API_URL
 
 # Build request body — resolve before building curl args so we can validate it.
@@ -96,7 +100,8 @@ fi
 
 # Build curl args — use --data-raw so $body content is sent verbatim without
 # curl interpreting @-prefixes as file paths (defense-in-depth alongside the guard above).
-curl_args=(-s -X POST "$OUTLINE_API_URL/$endpoint"
+# --max-time keeps a hung connection from blocking callers forever.
+curl_args=(-s --max-time "${WIKI_API_MAX_TIME:-120}" -X POST "$OUTLINE_API_URL/$endpoint"
   -H "Authorization: Bearer $OUTLINE_API_KEY"
   -H "X-Proxy-Token: $OUTLINE_API_KEY"
   -H "Content-Type: application/json"
