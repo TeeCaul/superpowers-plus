@@ -66,7 +66,7 @@ Run ONE combined reviewer by default. Dispatches up to 7 specialized reviewer ag
 
 ### Phase 0: Sentinel Check (canonical skip gate — run before dispatching anything)
 
-This is the canonical skip gate for the one-per-unit rule. **Run `tools/review-preflight.py` first** (`--staged` for an uncommitted change) and use its JSON -- sentinel states, BugPath mode, fired signal rows with file:line hits, rows left to judgment, and the inline-exemption answer -- instead of applying the Phase 0-1 tables by hand; the tables stay the spec. Callers (`requesting-code-review`, `finishing-a-development-branch`, `progressive-code-review-gate`) should run this before dispatching. If a caller does not implement Phase 0 explicitly, the agent should apply this decision manually before invoking battery.
+This is the canonical skip gate for the one-per-unit rule. **Run `tools/review-preflight.py` first** (`--base <integration-branch>`, default `origin/dev`, or `--staged` for an uncommitted change; pass `--mode=bug-fix|feature` when given) and use its JSON -- sentinel states, BugPath mode, fired signal rows with file:line hits, rows left to judgment, and the inline-exemption answer -- instead of applying the Phase 0-1 tables by hand; the tables stay the spec. Callers (`requesting-code-review`, `finishing-a-development-branch`, `progressive-code-review-gate`) should run this before dispatching. If a caller does not implement Phase 0 explicitly, the agent should run the preflight (or apply the tables) before invoking battery.
 
 ```bash
 SENTINEL="$(git rev-parse --show-toplevel 2>/dev/null || echo .)/.code-review-cleared"
@@ -79,7 +79,7 @@ git diff --quiet && git diff --cached --quiet && echo "WORKTREE_CLEAN" || echo "
 | Sentinel state | Decision |
 |----------------|----------|
 | `NO CLEARANCE` | Run battery (proceed to Phase 1). |
-| Sentinel SHA ≠ HEAD SHA | Run battery (battery is stale). |
+| Sentinel SHA ≠ HEAD SHA, and preflight does not report it `carried` (no in-scope file changed) | Run battery (battery is stale). |
 | Sentinel valid for HEAD but `WORKTREE_DIRTY` | Run battery (staged/unstaged changes exist that were not reviewed). |
 | Valid sentinel for HEAD AND `WORKTREE_CLEAN` | **Skip.** Battery already ran on the current code. Note the clearance and skip to Phase 6. |
 | Malformed | Delete `.code-review-cleared`, run battery. |

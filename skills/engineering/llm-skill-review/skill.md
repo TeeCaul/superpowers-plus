@@ -241,7 +241,7 @@ Gate 6 requires `.llm-skill-review-cleared` **v2** for `skills/*.md`, `.ai-guida
 ```bash
 tools/review-envelope.py init --kind skill-review   # binds head_sha in the body
 # add-clean / add-finding run each command now; resolve moves a fixed finding out of findings[]
-tools/review-envelope.py set --verdict PASS --mean "<Prose/Design-mean>" && tools/review-envelope.py check
+tools/review-envelope.py set --kind skill-review --verdict PASS --mean "<Prose/Design-mean>" && tools/review-envelope.py check --kind skill-review
 tools/run-llm-skill-review.sh --verdict PASS --min-score "<Prose/Design-mean>"
 ```
 

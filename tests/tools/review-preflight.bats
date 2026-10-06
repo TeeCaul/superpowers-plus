@@ -11,6 +11,10 @@
 bats_require_minimum_version 1.5.0
 
 setup() {
+  # Fixtures must not depend on the developer's git config (commit.gpgsign,
+  # diff.noprefix, init.defaultBranch, identity).
+  export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+  export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd -P)"
   TOOL="$REPO_ROOT/tools/review-preflight.py"
   WORK="$BATS_TEST_TMPDIR/repo"
@@ -167,6 +171,103 @@ fired() { q "' '.join(r['id'] for r in d['reviewers'] if r['kind'] != 'base')"; 
   git mv lib/old.js lib/new.js && git commit -qm mv
   preflight
   [[ "$(q "[r for r in d['reviewers'] if r['id']=='rename-delete'][0]['hits']")" == *"lib/old.js (renamed)"* ]]
+}
+
+@test "sentinel whose verdict does not clear its gate is not-clearing" {
+  commit_file lib/a.js 'const x = 1;\n'
+  H=$(git rev-parse HEAD)
+  echo "v1|$H|REJECT|2026-10-05T00:00:00Z" > .code-review-cleared
+  echo "v2|$H|PASS|ts|mean=9|unresolved_s0_s1=3|evidence_replay=ok" > .llm-skill-review-cleared
+  echo "v1|$H|PASS||" > .phr-cleared
+  preflight
+  [ "$(q "d['sentinels']['.code-review-cleared']['state']")" = "not-clearing" ]
+  [ "$(q "d['sentinels']['.llm-skill-review-cleared']['state']")" = "malformed" ]
+  [ "$(q "d['sentinels']['.phr-cleared']['state']")" = "malformed" ]
+}
+
+@test "unpromoted tree: sentinel is stale for the branch, valid for a matching index" {
+  commit_file lib/a.js 'const x = 1;\n'
+  printf 'const y = 2;\n' > lib/b.js
+  git add lib/b.js
+  echo "v1|tree:$(git write-tree)|PASS|2026-10-05T00:00:00Z" > .code-review-cleared
+  "$TOOL" --staged > "$BATS_TEST_TMPDIR/out.json"
+  [ "$(q "d['sentinels']['.code-review-cleared']['state']")" = "valid" ]
+  git commit -qm b
+  preflight
+  [ "$(q "d['sentinels']['.code-review-cleared']['state']")" = "stale" ]
+}
+
+@test "non-UTF-8 content and binary files do not crash the parser" {
+  printf '<cfset name = "caf\xe9">\n' > page.cfm
+  printf 'a\0b' > blob.bin
+  git add page.cfm blob.bin && git commit -qm enc
+  preflight
+  [ "$(q "sorted(f['path'] for f in d['diff']['files'])")" = "['blob.bin', 'page.cfm']" ]
+}
+
+@test "paths with spaces and non-ASCII names are scanned under their real names" {
+  printf 'retry auth token\n' > "my notes.md"
+  printf 'const password = 1;\n' > café.js
+  git add . && git commit -qm names
+  preflight
+  [ "$(q "d['diff']['change_class']")" = "code" ]
+  hits="$(q "[h for r in d['reviewers'] if r['kind'] != 'base' for h in r['hits']]")"
+  [[ "$hits" == *"café.js:1"* ]]
+  [[ "$hits" != *"my notes"* ]]
+}
+
+@test "user diff config cannot hide added lines" {
+  commit_file lib/client.js 'retry();\n'
+  GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=diff.noprefix GIT_CONFIG_VALUE_0=true \
+    GIT_CONFIG_KEY_1=diff.external GIT_CONFIG_VALUE_1=/usr/bin/true preflight
+  [[ " $(fired) " == *" guardian-mandatory "* ]]
+}
+
+@test "a leaked GIT_DIR does not redirect the preflight to another repo" {
+  commit_file lib/a.js 'const x = 1;\n'
+  other="$BATS_TEST_TMPDIR/other"
+  git init -q -b main "$other"
+  git -C "$other" commit -q --allow-empty -m other
+  GIT_DIR="$other/.git" preflight
+  [ "$(q "d['head']")" = "$(git rev-parse HEAD)" ]
+}
+
+@test "an added line starting with ++ is content, not a file header" {
+  commit_file lib/a.js '++ counter\nretry();\n'
+  preflight
+  [[ " $(fired) " == *" guardian-mandatory "* ]]
+}
+
+@test "bug-fix detection follows the runner's ticket prefix allowlist" {
+  git checkout -qb fix/ACME-12-x
+  commit_file lib/a.js 'const x = 1;\n'
+  preflight
+  [ "$(q "d['bugfix_mode']")" = "False" ]
+  git checkout -q main && printf 'ACME\n' > .cr-battery-ticket-prefixes && git add . && git commit -qm p
+  git checkout -q fix/ACME-12-x && git rebase -q main
+  preflight
+  [ "$(q "d['bugfix_mode']")" = "True" ]
+}
+
+@test "--mode overrides branch detection; --base with --staged is refused" {
+  git checkout -qb hotfix/x
+  commit_file lib/a.js 'const x = 1;\n'
+  preflight --mode feature
+  [ "$(q "d['bugfix_mode']")" = "False" ]
+  preflight --mode bug-fix
+  [ "$(q "d['bugfix_mode']")" = "True" ]
+  run "$TOOL" --base main --staged
+  [ "$status" -eq 2 ]
+  run "$TOOL" --base main --mode other
+  [ "$status" -eq 2 ]
+}
+
+@test "removals in a deleted code file keep the caller-removal judgment row" {
+  commit_file use.js 'only();\n'
+  git checkout -q main && git merge -q --ff-only feat/thing && git checkout -q feat/thing
+  git rm -q use.js && git commit -qm rm
+  preflight
+  [[ "$(q "[j['id'] for j in d['judgment_required']]")" == *"caller-removal"* ]]
 }
 
 @test "every row of the skill's signal table has exactly one encoded entry" {

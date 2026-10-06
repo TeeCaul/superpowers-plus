@@ -9,6 +9,10 @@
 bats_require_minimum_version 1.5.0
 
 setup() {
+  # Fixtures must not depend on the developer's git config (commit.gpgsign,
+  # diff.noprefix, init.defaultBranch, identity).
+  export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+  export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd -P)"
   TOOL="$REPO_ROOT/tools/review-envelope.py"
   WORK="$BATS_TEST_TMPDIR/repo"
@@ -116,6 +120,7 @@ print(len(e["findings"]), e["clean_dimensions"][0]["claim"], e["clean_dimensions
   run "$TOOL" check
   [ "$status" -eq 1 ]
   [[ "$output" == *"open S0/S1 findings block the sentinel: F1"* ]]
+  [[ "$output" == *"unresolved S0/S1 findings remain"* ]]
   printf 'alpha\n' > notes.txt
   "$TOOL" resolve F1 --cmd "grep beta notes.txt" --expect absent
   run "$TOOL" check
@@ -170,4 +175,91 @@ print(len(e["findings"]), e["clean_dimensions"][0]["claim"], e["clean_dimensions
   "$TOOL" init --kind battery
   run "$TOOL" add-clean --reviewer R --dimension D --claim x --cmd true --expect "lines=2"
   [ "$status" -eq 2 ]
+}
+
+@test "parallel writers lose no claims" {
+  "$TOOL" init --kind battery
+  for i in 1 2 3 4 5; do
+    "$TOOL" add-clean --reviewer "R$i" --dimension D --claim "c$i" \
+      --cmd "sleep 1; echo x" --expect "count==1" >/dev/null &
+  done
+  wait
+  run python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["clean_dimensions"]))' "$(env_file)"
+  [ "$output" = "5" ]
+}
+
+@test "resolve refuses while the finding's own evidence still holds" {
+  "$TOOL" init --kind skill-review
+  "$TOOL" add-finding --severity S1 --file notes.txt --line 2 --reviewer R \
+    --dimension D --claim "beta" --cmd "grep beta notes.txt" --expect "count=1"
+  run "$TOOL" resolve F1 --cmd true --expect "exit_code=0"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"own evidence still holds"* ]]
+  run "$TOOL" resolve F1 --cmd true --expect "exit_code=0" --evidence-unchanged "line kept, wording fixed"
+  [ "$status" -eq 0 ]
+  run python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["clean_dimensions"][0]["claim"])' "$(env_file)"
+  [[ "$output" == *"original evidence still holds: line kept, wording fixed"* ]]
+}
+
+@test "check fails a verdict that does not clear the gate" {
+  "$TOOL" init --kind skill-review
+  "$TOOL" add-clean --reviewer R --dimension D --claim c --cmd "cat notes.txt" --expect "count==2"
+  "$TOOL" set --verdict REJECT --mean 5
+  run "$TOOL" check
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"does not clear the skill-review gate"* ]]
+}
+
+@test "the skill-review gate itself refuses an envelope with no replayable evidence" {
+  "$TOOL" init --kind skill-review
+  "$TOOL" add-clean --reviewer R --dimension D --claim c --unverifiable "judgment only"
+  "$TOOL" set --verdict PASS --mean 8
+  run "$TOOL" check
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"non-vacuous review proof required"* ]]
+}
+
+@test "set rejects a score outside 1.0-10.0" {
+  "$TOOL" init --kind skill-review
+  run "$TOOL" set --verdict PASS --mean 0.5
+  [ "$status" -eq 2 ]
+}
+
+@test "empty match and padded exact values are rejected" {
+  "$TOOL" init --kind battery
+  run "$TOOL" add-clean --reviewer R --dimension D --claim x --cmd true --expect "match="
+  [ "$status" -eq 2 ]
+  run "$TOOL" add-clean --reviewer R --dimension D --claim x --cmd "echo hi" --expect "exact=hi "
+  [ "$status" -eq 2 ]
+}
+
+@test "a refused command runs once and non-UTF-8 output is shown, not a traceback" {
+  "$TOOL" init --kind battery
+  run "$TOOL" add-clean --reviewer R --dimension D --claim c \
+    --cmd "echo run >> '$BATS_TEST_TMPDIR/count'; printf 'a\377b\n'; exit 3" --expect "exit_code=0"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"REFUSED"* ]]
+  [[ "$output" != *"Traceback"* ]]
+  [[ "$output" == *"exit=3"* ]]
+  [ "$(grep -c run "$BATS_TEST_TMPDIR/count")" = "1" ]
+}
+
+@test "a missing envelope is a refusal with or without --kind" {
+  run "$TOOL" path
+  [ "$status" -eq 1 ]
+  run "$TOOL" path --kind battery
+  [ "$status" -eq 1 ]
+}
+
+@test "add-finding records the schema's optional fields and set records bugpath" {
+  "$TOOL" init --kind battery
+  "$TOOL" add-finding --severity important --file notes.txt --line 1 --reviewer R \
+    --dimension D --claim a --cmd "grep alpha notes.txt" --expect "count=1" \
+    --issue "alpha leaks" --durable-check "test added"
+  "$TOOL" set --verdict PASS --score 9 --rounds 2 --bugpath '{"path_coverage":"FULL"}'
+  run python3 -c '
+import json,sys
+e=json.load(open(sys.argv[1]))
+print(e["findings"][0]["issue"], e["findings"][0]["durable_check"], e["rounds"], e["bugpath_verdict"]["path_coverage"])' "$(env_file)"
+  [ "$output" = "alpha leaks test added 2 FULL" ]
 }

@@ -2,13 +2,15 @@
 """review-preflight.py -- the mechanical half of code-review-battery triage, as one JSON object.
 
 Usage:
-  review-preflight.py [--base REF | --staged]
+  review-preflight.py [--base REF | --staged] [--mode bug-fix|feature]
   review-preflight.py --list-signals
   review-preflight.py --help
 
   --base REF       review the branch: diff from merge-base(REF, HEAD) to HEAD
                    (default origin/dev)
   --staged         review the index: diff from HEAD to the staged tree
+  --mode M         force bug-fix or feature mode, as code-review-battery's
+                   --mode flag does; otherwise detected from the branch name
   --list-signals   print the encoded signal table as JSON and exit
 
 Run it before code-review-battery Phases 0, 0.5 and 1 and read its JSON instead
@@ -18,12 +20,19 @@ is checked against them by tests/tools/review-preflight.bats.
 Output keys:
   head, branch, base, mode     what was compared
   worktree_clean               false if tracked files have uncommitted changes
-  sentinels                    per sentinel file: state valid|stale|missing|malformed,
-                               the recorded sha, and "carried": true when the
-                               sentinel names another commit but no file in its
-                               scope changed (tools/lib/sentinel-scope.sh, the
-                               same rule the pre-push gates apply)
-  bugfix_mode                  branch matches ^(hotfix/|fix/[A-Z]+-[0-9]+)
+  sentinels                    per sentinel file: state valid, stale, missing,
+                               malformed or not-clearing (its verdict does not
+                               clear its gate), with the recorded sha and
+                               verdict. "carried": true means it names another
+                               commit but no file in its scope changed, so the
+                               gate still accepts it. Validation is the gates'
+                               own bash (tools/lib/review-sentinel.sh,
+                               sentinel-scope.sh)
+  bugfix_mode                  as tools/run-battery.sh decides it: --mode, else
+                               hotfix/ or fix/<prefix>- where the prefixes come
+                               from .cr-battery-ticket-prefixes (default
+                               PROJ FEAT FIX BUG INFRA SEC QA); see
+                               bugfix_mode_reason
   diff                         files with status and line counts, totals,
                                change_class, size_class
   routes                       tools/review.sh route, parsed per review class
@@ -52,15 +61,11 @@ import sys
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 TOOLS_ROOT = os.path.dirname(SCRIPT_DIR)
 REVIEW_SH = os.path.join(SCRIPT_DIR, "review.sh")
-SCOPE_LIB = os.path.join(SCRIPT_DIR, "lib", "sentinel-scope.sh")
+LIB_DIR = os.path.join(SCRIPT_DIR, "lib")
 
 SENTINELS = (".code-review-cleared", ".phr-cleared", ".llm-skill-review-cleared")
-SENTINEL_VERSION = {".code-review-cleared": "v1", ".phr-cleared": "v1",
-                    ".llm-skill-review-cleared": "v2"}
-SENTINEL_FIELDS = {".code-review-cleared": (4, 5), ".phr-cleared": (5, 5),
-                   ".llm-skill-review-cleared": (7, 7)}
-
-BUGFIX_BRANCH = re.compile(r"^(hotfix/|fix/[A-Z]+-[0-9]+)")
+# Same default list and file as tools/run-battery.sh's Bug Fix Mode detection.
+DEFAULT_TICKET_PREFIXES = ("PROJ", "FEAT", "FIX", "BUG", "INFRA", "SEC", "QA")
 DOC_FILE = re.compile(r"\.(md|txt|rst)$")
 TEST_FILE = re.compile(r"(^|/)(tests?|__tests__)/|\.bats$|\.test\.[jt]sx?$|(^|/)test_[^/]+\.py$")
 CONFIG_FILE = re.compile(r"\.(json|ya?ml|toml|ini|cfg|conf)$|(^|/)\.[^/]+$")
@@ -107,8 +112,8 @@ SIGNALS = [
     {"id": "test-only", "row": "Test-only change",
      "reviewers": ["Standards Enforcer", "Defect Finder"], "match": "class", "heuristic": False},
     {"id": "ticket-in-comment", "row": "ticket-tracker reference",
-     "reviewers": ["Standards Enforcer"], "match": "added", "heuristic": False,
-     "regex": r"^\s*(//|/\*|\*\s).*\b[A-Z][A-Z0-9]+-[0-9]+\b"},
+     "reviewers": ["Standards Enforcer"], "match": "added", "heuristic": True,
+     "regex": r"^\s*(//|/\*|\*\s).*\b(?!(UTF|ISO|RFC|SHA|HTTP|TLS|SSL|CVE|AES|MD|SEC|X)-)[A-Z][A-Z0-9]+-[0-9]+\b"},
     {"id": "security", "row": "Security-class signal",
      "reviewers": ["AttackerPersona"], "match": "added", "heuristic": True,
      "regex": r"\b(secret|password|passwd|api[_-]?key|cookie|session|credential)s?\b"
@@ -149,7 +154,13 @@ class UsageError(Exception):
 
 
 def run(cmd, check=True, **kw):
-    r = subprocess.run(cmd, capture_output=True, text=True, **kw)
+    """Run cmd, decoding output leniently (diffs may hold non-UTF-8 bytes)."""
+    try:
+        r = subprocess.run(cmd, capture_output=True, **kw)
+    except OSError as e:
+        raise UsageError("cannot run %s: %s" % (cmd[0], e))
+    r.stdout = r.stdout.decode("utf-8", errors="replace")
+    r.stderr = r.stderr.decode("utf-8", errors="replace")
     if check and r.returncode != 0:
         raise UsageError("%s failed: %s" % (" ".join(cmd[:3]), r.stderr.strip() or r.stdout.strip()))
     return r
@@ -159,50 +170,87 @@ def git(*args, check=True):
     return run(["git", *args], check=check).stdout
 
 
+# Pin diff output so user config (diff.noprefix, diff.external, custom
+# prefixes, quoted paths) cannot change what the parser sees.
+DIFF = ["-c", "core.quotePath=false", "diff", "--no-color", "--no-ext-diff",
+        "--src-prefix=a/", "--dst-prefix=b/"]
+
+
 # --- diff --------------------------------------------------------------------
 
 def diff_range(base, staged):
     if staged:
-        return ["--cached", "HEAD"], "HEAD", "index"
+        return ["--cached", "HEAD"], git("rev-parse", "HEAD").strip()
     if run(["git", "rev-parse", "--verify", "--quiet", base + "^{commit}"], check=False).returncode:
         raise UsageError("base ref %r not found; fetch it or pass --base" % base)
     mb = git("merge-base", base, "HEAD").strip()
-    return [mb, "HEAD"], mb, "HEAD"
+    return [mb, "HEAD"], mb
 
 
 def collect_diff(rng):
     files = {}
-    for line in git("diff", "--no-color", "--name-status", "-M", *rng).splitlines():
-        parts = line.split("\t")
-        status = parts[0][:1]
-        path = parts[-1]
+    fields = git(*DIFF, "--name-status", "-z", "-M", *rng).split("\0")
+    i = 0
+    while i < len(fields) and fields[i]:
+        status = fields[i][:1]
+        if status in ("R", "C"):
+            old, path = fields[i + 1], fields[i + 2]
+            i += 3
+        else:
+            old, path = None, fields[i + 1]
+            i += 2
         files[path] = {"path": path, "status": status, "added": 0, "removed": 0}
         if status == "R":
-            files[path]["renamed_from"] = parts[1]
-    for line in git("diff", "--no-color", "--numstat", "-M", *rng).splitlines():
-        a, r, path = line.split("\t", 2)
-        if " => " in path:  # rename shown as a/{x => y}/b or x => y
-            path = re.sub(r"\{[^{}]* => ([^{}]*)\}", r"\1", path)
-            path = path.split(" => ")[-1]
-            path = path.replace("//", "/")
+            files[path]["renamed_from"] = old
+    # numstat -z: "A\tR\tpath\0" or, for a rename, "A\tR\t\0old\0new\0"
+    fields = git(*DIFF, "--numstat", "-z", "-M", *rng).split("\0")
+    i = 0
+    while i < len(fields) and fields[i]:
+        a, r, path = fields[i].split("\t", 2)
+        if path == "":
+            path = fields[i + 2]
+            i += 3
+        else:
+            i += 1
         if path in files:
             files[path]["added"] = int(a) if a != "-" else 0
             files[path]["removed"] = int(r) if r != "-" else 0
             files[path]["binary"] = a == "-"
+
     added_lines = []  # (path, line_no, text)
     removed_count_code = 0
-    cur, new_no = None, 0
-    for line in git("diff", "--no-color", "--unified=0", "-M", *rng).splitlines():
-        if line.startswith("+++ "):
-            cur = line[6:] if line.startswith("+++ b/") else None
+    old_path = new_path = None
+    left_old = left_new = 0  # lines still owed by the current hunk
+    new_no = 0
+    for line in git(*DIFF, "--unified=0", "-M", *rng).split("\n"):
+        if left_old > 0 or left_new > 0:
+            tag, text = line[:1], line[1:]
+            if tag == "+":
+                added_lines.append((new_path, new_no, text))
+                new_no += 1
+                left_new -= 1
+            elif tag == "-":
+                if old_path and not DOC_FILE.search(old_path):
+                    removed_count_code += 1
+                left_old -= 1
+            elif tag == " ":
+                new_no += 1
+                left_old -= 1
+                left_new -= 1
+            continue
+        if line.startswith("--- "):
+            p = line[4:].rstrip("\t")
+            old_path = p[2:] if p.startswith("a/") else None
+        elif line.startswith("+++ "):
+            p = line[4:].rstrip("\t")
+            new_path = p[2:] if p.startswith("b/") else None
         elif line.startswith("@@"):
-            m = re.search(r"\+(\d+)", line)
-            new_no = int(m.group(1)) if m else 0
-        elif line.startswith("+") and cur is not None:
-            added_lines.append((cur, new_no, line[1:]))
-            new_no += 1
-        elif line.startswith("-") and not line.startswith("--- ") and cur and not DOC_FILE.search(cur):
-            removed_count_code += 1
+            m = re.match(r"@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", line)
+            if m:
+                left_old = int(m.group(1)) if m.group(1) is not None else 1
+                new_no = int(m.group(2))
+                left_new = int(m.group(3)) if m.group(3) is not None else 1
+    added_lines = [x for x in added_lines if x[0] is not None]
     return list(files.values()), added_lines, removed_count_code
 
 
@@ -242,50 +290,80 @@ def is_shell_file(path):
         return False
 
 
+def bugfix_mode(root, branch, mode):
+    """Mirror tools/run-battery.sh: explicit --mode wins, else the branch name
+    against hotfix/ or fix/<allowlisted ticket prefix>-."""
+    if mode == "feature":
+        return False, "--mode=feature"
+    if mode == "bug-fix":
+        return True, "--mode=bug-fix"
+    prefixes = []
+    cfg = os.path.join(root, ".cr-battery-ticket-prefixes")
+    if os.path.isfile(cfg):
+        with open(cfg, encoding="utf-8", errors="replace") as fh:
+            prefixes = [x.strip() for x in fh if re.fullmatch(r"[A-Z]+", x.strip())][:50]
+    prefixes = prefixes or list(DEFAULT_TICKET_PREFIXES)
+    rx = r"^(hotfix/|fix/(%s)-)" % "|".join(prefixes)
+    return bool(re.match(rx, branch)), "branch %r against %s" % (branch, rx)
+
+
 # --- sentinels ---------------------------------------------------------------
 
-def scope_unchanged(sentinel, reviewed, head):
-    """Ask tools/lib/sentinel-scope.sh, exactly as the pre-push gates do."""
-    script = ('source "$1"; c="$(sentinel_scope_classifier_for "$2")" || exit 3; '
-              'if sentinel_scope_unchanged "$3" "$4" "$c"; then exit 0; fi; '
-              'printf "%s" "$SENTINEL_SCOPE_CHANGED"; exit 1')
+# Validates every sentinel with the same bash functions the pre-push gates and
+# tools/push-readiness.sh use, and prints one tab-separated line per sentinel:
+#   name  state  sha  verdict  carried  detail
+SENTINEL_DRIVER = r"""
+lib="$1"; head="$2"; shift 2
+source "$lib/code-review-sentinel.sh"
+source "$lib/review-sentinel.sh"
+source "$lib/sentinel-scope.sh"
+for s in "$@"; do
+  if [[ ! -f "$s" ]]; then printf '%s\tmissing\t\t\t0\t\n' "$s"; continue; fi
+  validate_review_sentinel "$s"
+  sha="$SENTINEL_SHA" verdict="$SENTINEL_VERDICT"
+  if [[ -n "$SENTINEL_ERROR" ]]; then
+    printf '%s\tmalformed\t%s\t%s\t0\t%s\n' "$s" "$sha" "$verdict" "$SENTINEL_ERROR"; continue
+  fi
+  accepted="$(review_sentinel_accepted_verdicts "$s")"
+  case " $accepted " in
+    *" $verdict "*) ;;
+    *) printf '%s\tnot-clearing\t%s\t%s\t0\tverdict does not clear its gate (accepts: %s)\n' \
+         "$s" "$sha" "$verdict" "$accepted"; continue ;;
+  esac
+  if [[ "$sha" == "$head" ]]; then printf '%s\tvalid\t%s\t%s\t0\t\n' "$s" "$sha" "$verdict"; continue; fi
+  if sentinel_scope_unchanged "$sha" "$head" "$(sentinel_scope_classifier_for "$s")"; then
+    printf '%s\tvalid\t%s\t%s\t1\t\n' "$s" "$sha" "$verdict"
+  else
+    printf '%s\tstale\t%s\t%s\t0\t%s\n' "$s" "$sha" "$verdict" "$(printf '%s' "$SENTINEL_SCOPE_CHANGED" | tr '\n' ' ')"
+  fi
+done
+"""
+
+
+def sentinel_states(head, staged):
     env = dict(os.environ, REPO_ROOT=TOOLS_ROOT)
-    for v in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_PREFIX"):
-        env.pop(v, None)
-    r = subprocess.run(["bash", "-c", script, "scope", SCOPE_LIB, sentinel, reviewed, head],
-                       capture_output=True, text=True, env=env)
-    return r.returncode == 0, r.stdout.strip()
-
-
-def sentinel_state(root, name, head, staged):
-    path = os.path.join(root, name)
-    if not os.path.isfile(path):
-        return {"state": "missing"}
-    with open(path, encoding="utf-8", errors="replace") as fh:
-        lines = [x for x in fh.read().splitlines() if x.strip()]
-    if len(lines) != 1:
-        return {"state": "malformed", "detail": "%d non-blank lines; must be exactly 1" % len(lines)}
-    fields = lines[0].split("|")
-    lo, hi = SENTINEL_FIELDS[name]
-    if fields[0] != SENTINEL_VERSION[name] or not lo <= len(fields) <= hi or not fields[1]:
-        return {"state": "malformed", "detail": "unrecognized format: %s" % lines[0][:80]}
-    sha, verdict = fields[1], fields[2]
-    out = {"sha": sha, "verdict": verdict}
-    if sha.startswith("tree:"):
-        tree = sha[5:]
-        trees = {git("rev-parse", "HEAD^{tree}").strip()}
-        if staged:
-            trees.add(git("write-tree").strip())
-        out["state"] = "valid" if tree in trees else "stale"
-        return out
-    if sha == head:
-        out["state"] = "valid"
-        return out
-    same, changed = scope_unchanged(name, sha, head)
-    if same:
-        out.update(state="valid", carried=True)
-    else:
-        out.update(state="stale", detail=changed or "scope check failed")
+    r = run(["bash", "-c", SENTINEL_DRIVER, "sentinels", LIB_DIR, head, *SENTINELS], env=env)
+    out = {}
+    for line in r.stdout.splitlines():
+        name, state, sha, verdict, carried, detail = line.split("\t", 5)
+        entry = {"state": state}
+        if sha:
+            entry.update(sha=sha, verdict=verdict)
+        if carried == "1":
+            entry["carried"] = True
+        if detail.strip():
+            entry["detail"] = detail.strip()
+        # A tree: sentinel (run-battery.sh --staged) is promoted by the
+        # post-commit hook; until then the gates call it stale. It does cover
+        # an index whose tree matches, which is what --staged asks about.
+        if staged and state == "stale" and sha.startswith("tree:") \
+                and sha[5:] == git("write-tree").strip():
+            entry = {"state": "valid", "sha": sha, "verdict": verdict,
+                     "detail": "covers the staged tree; the post-commit hook promotes it"}
+        out[name] = entry
+    missing = [n for n in SENTINELS if n not in out]
+    if missing:
+        raise UsageError("sentinel check printed nothing for %s" % ", ".join(missing))
     return out
 
 
@@ -413,28 +491,28 @@ def inline_exemption(changed, nfiles, bugfix, fired, mandatory, judgment):
 
 # --- main --------------------------------------------------------------------
 
-def preflight(base, staged):
+def preflight(base, staged, mode):
     if run(["git", "rev-parse", "--git-dir"], check=False).returncode:
         raise UsageError("not a git repository")
     root = git("rev-parse", "--show-toplevel").strip()
     os.chdir(root)
     head = git("rev-parse", "HEAD").strip()
     branch = git("branch", "--show-current").strip()
-    rng, base_sha, _ = diff_range(base, staged)
+    rng, base_sha = diff_range(base, staged)
     files, added, removed_code = collect_diff(rng)
     paths = [f["path"] for f in files]
     total_added = sum(f["added"] for f in files)
     total_removed = sum(f["removed"] for f in files)
     changed = total_added + total_removed
     cls = change_class(paths)
-    bugfix = bool(BUGFIX_BRANCH.match(branch))
+    bugfix, bugfix_reason = bugfix_mode(root, branch, mode)
     fired, mandatory, judgment = scan_signals(files, added, cls, changed)
     if not removed_code:
         judgment = [j for j in judgment if j["id"] != "caller-removal"]
     rows = base_reviewers(cls) + fired + mandatory
     eligible, reasons = inline_exemption(changed, len(files), bugfix, fired, mandatory, judgment)
-    dirty = run(["git", "diff", "--quiet"], check=False).returncode or \
-        run(["git", "diff", "--cached", "--quiet"], check=False).returncode
+    dirty = run(["git", "diff", "--no-ext-diff", "--quiet"], check=False).returncode or \
+        run(["git", "diff", "--no-ext-diff", "--cached", "--quiet"], check=False).returncode
     route_paths = paths + [f["renamed_from"] for f in files if f.get("renamed_from")]
     return {
         "head": head,
@@ -443,8 +521,9 @@ def preflight(base, staged):
         "base": "HEAD" if staged else base,
         "base_sha": base_sha,
         "worktree_clean": not dirty,
-        "sentinels": {name: sentinel_state(root, name, head, staged) for name in SENTINELS},
+        "sentinels": sentinel_states(head, staged),
         "bugfix_mode": bugfix,
+        "bugfix_mode_reason": bugfix_reason,
         "diff": {"files": files, "file_count": len(files), "added": total_added,
                  "removed": total_removed, "changed_lines": changed,
                  "change_class": cls, "size_class": size_class(changed, len(files))},
@@ -458,7 +537,11 @@ def preflight(base, staged):
 
 
 def main(argv):
-    base, staged = "origin/dev", False
+    base, staged, mode, base_given = "origin/dev", False, None, False
+    # A GIT_DIR leaked from a hook under a linked worktree would point every
+    # git call (and review.sh) at another repo than the sentinels read here.
+    for v in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_PREFIX"):
+        os.environ.pop(v, None)
     it = iter(argv)
     try:
         for a in it:
@@ -470,15 +553,25 @@ def main(argv):
                 return 0
             if a == "--staged":
                 staged = True
-            elif a == "--base":
-                base = next(it, None)
-                if not base:
-                    raise UsageError("--base needs a ref")
+            elif a in ("--base", "--mode"):
+                val = next(it, None)
+                if not val:
+                    raise UsageError("%s needs a value" % a)
+                if a == "--base":
+                    base, base_given = val, True
+                else:
+                    mode = val
             elif a.startswith("--base="):
-                base = a.split("=", 1)[1]
+                base, base_given = a.split("=", 1)[1], True
+            elif a.startswith("--mode="):
+                mode = a.split("=", 1)[1]
             else:
                 raise UsageError("unknown argument %r" % a)
-        print(json.dumps(preflight(base, staged), indent=2))
+        if staged and base_given:
+            raise UsageError("--base and --staged are exclusive")
+        if mode is not None and mode not in ("bug-fix", "feature"):
+            raise UsageError("--mode must be bug-fix or feature")
+        print(json.dumps(preflight(base, staged, mode), indent=2))
         return 0
     except UsageError as e:
         print("usage error: %s (see --help)" % e, file=sys.stderr)
