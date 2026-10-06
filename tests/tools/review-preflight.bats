@@ -270,6 +270,31 @@ fired() { q "' '.join(r['id'] for r in d['reviewers'] if r['kind'] != 'base')"; 
   [[ "$(q "[j['id'] for j in d['judgment_required']]")" == *"caller-removal"* ]]
 }
 
+@test "header paths with quotes and backslashes are unquoted and scanned" {
+  printf 'retry();\n' > 'a"b.js'
+  printf 'retry();\n' > 'c\d.js'
+  git add . && git commit -qm q
+  preflight
+  hits="$(q "[r for r in d['reviewers'] if r['id']=='guardian-mandatory'][0]['hits']")"
+  [[ "$hits" == *'a"b.js:1'* ]]
+  [[ "$hits" == *'c\\d.js:1'* ]]
+  [ "$(q "d['unscanned_files']")" = "[]" ]
+}
+
+@test "a CRLF prefix file is ignored, as the runner's grep ignores it" {
+  git checkout -qb fix/ACME-12-x
+  printf 'ACME\r\n' > .cr-battery-ticket-prefixes
+  commit_file lib/a.js 'const x = 1;\n'
+  preflight
+  [ "$(q "d['bugfix_mode']")" = "False" ]
+}
+
+@test "a SEC- ticket in a comment is still flagged" {
+  commit_file lib/n.js '// see SEC-42 for the TTL\nconst a = 1;\n'
+  preflight
+  [[ " $(fired) " == *" ticket-in-comment "* ]]
+}
+
 @test "every row of the skill's signal table has exactly one encoded entry" {
   skill="$REPO_ROOT/skills/engineering/code-review-battery/skill.md"
   "$TOOL" --list-signals > "$BATS_TEST_TMPDIR/signals.json"

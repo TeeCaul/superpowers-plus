@@ -113,7 +113,7 @@ SIGNALS = [
      "reviewers": ["Standards Enforcer", "Defect Finder"], "match": "class", "heuristic": False},
     {"id": "ticket-in-comment", "row": "ticket-tracker reference",
      "reviewers": ["Standards Enforcer"], "match": "added", "heuristic": True,
-     "regex": r"^\s*(//|/\*|\*\s).*\b(?!(UTF|ISO|RFC|SHA|HTTP|TLS|SSL|CVE|AES|MD|SEC|X)-)[A-Z][A-Z0-9]+-[0-9]+\b"},
+     "regex": r"^\s*(//|/\*|\*\s).*\b(?!(UTF|ISO|RFC|SHA|HTTP|TLS|SSL|CVE|AES|MD|X)-)[A-Z][A-Z0-9]+-[0-9]+\b"},
     {"id": "security", "row": "Security-class signal",
      "reviewers": ["AttackerPersona"], "match": "added", "heuristic": True,
      "regex": r"\b(secret|password|passwd|api[_-]?key|cookie|session|credential)s?\b"
@@ -218,6 +218,7 @@ def collect_diff(rng):
             files[path]["binary"] = a == "-"
 
     added_lines = []  # (path, line_no, text)
+    unscanned = []  # header paths that could not be resolved
     removed_count_code = 0
     old_path = new_path = None
     left_old = left_new = 0  # lines still owed by the current hunk
@@ -239,11 +240,13 @@ def collect_diff(rng):
                 left_new -= 1
             continue
         if line.startswith("--- "):
-            p = line[4:].rstrip("\t")
+            p = header_path(line[4:])
             old_path = p[2:] if p.startswith("a/") else None
         elif line.startswith("+++ "):
-            p = line[4:].rstrip("\t")
+            p = header_path(line[4:])
             new_path = p[2:] if p.startswith("b/") else None
+            if new_path is None and p != "/dev/null":
+                unscanned.append(p)
         elif line.startswith("@@"):
             m = re.match(r"@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", line)
             if m:
@@ -251,7 +254,36 @@ def collect_diff(rng):
                 new_no = int(m.group(2))
                 left_new = int(m.group(3)) if m.group(3) is not None else 1
     added_lines = [x for x in added_lines if x[0] is not None]
-    return list(files.values()), added_lines, removed_count_code
+    return list(files.values()), added_lines, removed_count_code, unscanned
+
+
+C_ESCAPES = {"a": 7, "b": 8, "t": 9, "n": 10, "v": 11, "f": 12, "r": 13,
+             '"': 34, "\\": 92}
+
+
+def header_path(raw):
+    """Undo git's C-quoting of a ---/+++ header path ("b/a\\"b.js" -> b/a"b.js).
+    core.quotePath=false stops octal escapes for non-ASCII, but quotes, backslashes
+    and control characters are still quoted."""
+    raw = raw.rstrip("\t")
+    if not (len(raw) >= 2 and raw[0] == '"' and raw[-1] == '"'):
+        return raw
+    body, out, i = raw[1:-1], bytearray(), 0
+    while i < len(body):
+        c = body[i]
+        if c != "\\" or i + 1 >= len(body):
+            out += c.encode("utf-8")
+            i += 1
+        elif body[i + 1] in C_ESCAPES:
+            out.append(C_ESCAPES[body[i + 1]])
+            i += 2
+        elif re.match(r"[0-7]{3}", body[i + 1:i + 4]):
+            out.append(int(body[i + 1:i + 4], 8))
+            i += 4
+        else:
+            out += c.encode("utf-8")
+            i += 1
+    return out.decode("utf-8", errors="replace")
 
 
 def change_class(paths):
@@ -300,8 +332,9 @@ def bugfix_mode(root, branch, mode):
     prefixes = []
     cfg = os.path.join(root, ".cr-battery-ticket-prefixes")
     if os.path.isfile(cfg):
-        with open(cfg, encoding="utf-8", errors="replace") as fh:
-            prefixes = [x.strip() for x in fh if re.fullmatch(r"[A-Z]+", x.strip())][:50]
+        with open(cfg, encoding="utf-8", errors="replace", newline="") as fh:
+            # Line by line exactly as grep -E '^[A-Z]+$' reads it: "ABC\r" is no match.
+            prefixes = [x.rstrip("\n") for x in fh if re.fullmatch(r"[A-Z]+", x.rstrip("\n"))][:50]
     prefixes = prefixes or list(DEFAULT_TICKET_PREFIXES)
     rx = r"^(hotfix/|fix/(%s)-)" % "|".join(prefixes)
     return bool(re.match(rx, branch)), "branch %r against %s" % (branch, rx)
@@ -499,7 +532,7 @@ def preflight(base, staged, mode):
     head = git("rev-parse", "HEAD").strip()
     branch = git("branch", "--show-current").strip()
     rng, base_sha = diff_range(base, staged)
-    files, added, removed_code = collect_diff(rng)
+    files, added, removed_code, unscanned = collect_diff(rng)
     paths = [f["path"] for f in files]
     total_added = sum(f["added"] for f in files)
     total_removed = sum(f["removed"] for f in files)
@@ -511,6 +544,12 @@ def preflight(base, staged, mode):
         judgment = [j for j in judgment if j["id"] != "caller-removal"]
     rows = base_reviewers(cls) + fired + mandatory
     eligible, reasons = inline_exemption(changed, len(files), bugfix, fired, mandatory, judgment)
+    if unscanned:
+        # Fail closed: lines that were never scanned cannot vouch for "no signal".
+        if eligible:
+            reasons = []
+        eligible = False
+        reasons.append("added lines not scanned (unparsed diff header): %s" % ", ".join(unscanned[:5]))
     dirty = run(["git", "diff", "--no-ext-diff", "--quiet"], check=False).returncode or \
         run(["git", "diff", "--no-ext-diff", "--cached", "--quiet"], check=False).returncode
     route_paths = paths + [f["renamed_from"] for f in files if f.get("renamed_from")]
@@ -531,6 +570,7 @@ def preflight(base, staged, mode):
         "reviewers": rows,
         "dispatch": dispatch_plan(cls, rows, bugfix),
         "judgment_required": judgment,
+        "unscanned_files": unscanned,
         "inline_exemption_eligible": eligible,
         "inline_exemption_reasons": reasons,
     }

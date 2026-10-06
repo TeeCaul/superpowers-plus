@@ -263,3 +263,18 @@ e=json.load(open(sys.argv[1]))
 print(e["findings"][0]["issue"], e["findings"][0]["durable_check"], e["rounds"], e["bugpath_verdict"]["path_coverage"])' "$(env_file)"
   [ "$output" = "alpha leaks test added 2 FULL" ]
 }
+
+@test "an S0 cannot be resolved without its own evidence failing" {
+  "$TOOL" init --kind skill-review
+  "$TOOL" add-finding --severity S0 --file notes.txt --line 2 --reviewer R \
+    --dimension D --claim "beta" --cmd "grep beta notes.txt" --expect "count=1"
+  "$TOOL" add-finding --severity S0 --file notes.txt --line 1 --reviewer R \
+    --dimension D --claim "race" --unverifiable "judgment"
+  run "$TOOL" resolve F1 --cmd true --expect "exit_code=0" --evidence-unchanged x
+  [ "$status" -eq 1 ]
+  run "$TOOL" resolve F2 --cmd true --expect "exit_code=0"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"can only be resolved by replaying its own evidence"* ]]
+  run python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["findings"]))' "$(env_file)"
+  [ "$output" = "2" ]
+}

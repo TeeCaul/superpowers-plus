@@ -81,8 +81,8 @@ git diff --quiet && git diff --cached --quiet && echo "WORKTREE_CLEAN" || echo "
 | `NO CLEARANCE` | Run battery (proceed to Phase 1). |
 | Sentinel SHA ≠ HEAD SHA, and preflight does not report it `carried` (no in-scope file changed) | Run battery (battery is stale). |
 | Sentinel valid for HEAD but `WORKTREE_DIRTY` | Run battery (staged/unstaged changes exist that were not reviewed). |
-| Valid sentinel for HEAD AND `WORKTREE_CLEAN` | **Skip.** Battery already ran on the current code. Note the clearance and skip to Phase 6. |
-| Malformed | Delete `.code-review-cleared`, run battery. |
+| Valid sentinel for HEAD (or `carried`) AND `WORKTREE_CLEAN` | **Skip.** Battery already ran on the current code. Note the clearance and skip to Phase 6. |
+| Malformed, or preflight `not-clearing` (verdict does not clear the gate) | Delete `.code-review-cleared`, run battery. |
 
 ### Phase 0.5: BugPath Mode Detection
 

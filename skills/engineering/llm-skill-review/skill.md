@@ -239,8 +239,8 @@ Gate 6 requires `.llm-skill-review-cleared` **v2** for `skills/*.md`, `.ai-guida
 **Sentinel write:** findings need `severity`; the envelope needs `"head_sha"` equal to the commit being cleared; at least one `clean_dimensions` entry needs replayable evidence (`{"evidence":{"command":"...","verifiable":true}}`) — a bare string or an all-`verifiable:false` set is refused as vacuous. Then:
 
 ```bash
-tools/review-envelope.py init --kind skill-review   # binds head_sha in the body
-# add-clean / add-finding run each command now; resolve moves a fixed finding out of findings[]
+tools/review-envelope.py init --kind skill-review  # binds head_sha
+# add-clean, add-finding, resolve: each runs its command first
 tools/review-envelope.py set --kind skill-review --verdict PASS --mean "<Prose/Design-mean>" && tools/review-envelope.py check --kind skill-review
 tools/run-llm-skill-review.sh --verdict PASS --min-score "<Prose/Design-mean>"
 ```

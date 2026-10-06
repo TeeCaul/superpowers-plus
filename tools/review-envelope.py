@@ -42,7 +42,9 @@ What each subcommand guarantees:
       is ID removed from findings[] and recorded as a clean dimension
       "ID (<severity>, fixed): <claim>". When the finding's evidence cannot go
       false (for example it greps a line the fix keeps), pass
-      --evidence-unchanged WHY; the reason is recorded in the claim.
+      --evidence-unchanged WHY; the reason is recorded in the claim. An S0 or
+      critical finding never takes that route, and neither does a judgment
+      (--unverifiable) one: it stays open until its own evidence fails.
       findings[] must only hold open findings: the skill-review gate counts
       every S0/S1 entry in it as unresolved.
   set
@@ -382,6 +384,14 @@ def cmd_resolve(args):
     root, _sha, _kind, path = locate(args)
     finding = open_finding(load(path), args.id)
     original = finding.get("evidence") or {}
+    blocking = finding.get("severity") in ("S0", "critical")
+    if blocking and (args.evidence_unchanged is not None or original.get("verifiable") is False):
+        # The skill-review gate never lets an S0 out without its own waiver
+        # rules, so resolve must not offer a softer route: the defect's
+        # evidence has to be replayed and has to fail.
+        raise Refused("%s is %s: it can only be resolved by replaying its own evidence and seeing it "
+                      "fail. Fix it so that command fails, or keep it open and use the gate's waiver "
+                      "rules." % (args.id, finding.get("severity")))
     note = ""
     if args.evidence_unchanged is not None:
         if not args.evidence_unchanged.strip():
