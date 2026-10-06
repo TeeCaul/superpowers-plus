@@ -141,18 +141,25 @@ fi
 for dir in "${COMPARE_DIRS[@]}"; do
   search_root="$dir"; [[ -d "$dir/skills" ]] && search_root="$dir/skills"
   while IFS= read -r src; do
+    # Skip a nested worktree checkout WITHIN this subtree — relative to
+    # search_root, not a bare substring match against the full path, which
+    # would wrongly exclude everything when the repo itself is checked out
+    # under a ".worktrees/" ancestor directory (this repo's own mandatory
+    # workflow for all new branches).
+    [[ "${src#"$search_root"/}" == *.worktrees/* ]] && continue
     skill=$(basename "$(dirname "$src")")
     install_name="${SOURCE_DEST_NAME[$skill]:-$skill}"
     installed_skill="$INSTALLED_DIR/$install_name/skill.md"
     if [[ -f "$installed_skill" ]] && diff -q "$src" "$installed_skill" > /dev/null 2>&1; then
       INSTALLED_MATCH_DIR[$skill]="$dir"
     fi
-  done < <(find "$search_root" -name "skill.md" -not -path "*/references/*" -not -path "*/.worktrees/*" 2>/dev/null)
+  done < <(find "$search_root" -name "skill.md" -not -path "*/references/*" 2>/dev/null)
 done
 
 for dir in "${COMPARE_DIRS[@]}"; do
   search_root="$dir"; [[ -d "$dir/skills" ]] && search_root="$dir/skills"
   while IFS= read -r src_ref; do
+    [[ "${src_ref#"$search_root"/}" == *.worktrees/* ]] && continue
     skill_dir=$(basename "$(dirname "$(dirname "$src_ref")")")
     ref_name=$(basename "$src_ref")
     key="${skill_dir}/${ref_name}"
@@ -167,13 +174,14 @@ for dir in "${COMPARE_DIRS[@]}"; do
     fi
     REF_OWNER_DIR[$key]="$dir"
     REF_PRIORITY[$key]="$src_ref"
-  done < <(find "$search_root" -path "*/references/*.md" -not -path "*/.worktrees/*" 2>/dev/null)
+  done < <(find "$search_root" -path "*/references/*.md" 2>/dev/null)
   # Track overlay skill.md paths
   if [[ "$dir" != "$SP_PLUS_DIR" ]]; then
     while IFS= read -r src; do
+      [[ "${src#"$search_root"/}" == *.worktrees/* ]] && continue
       skill=$(basename "$(dirname "$src")")
       OVERLAY_SOURCE[$skill]="$src"
-    done < <(find "$search_root" -name "skill.md" -not -path "*/references/*" -not -path "*/.worktrees/*" 2>/dev/null)
+    done < <(find "$search_root" -name "skill.md" -not -path "*/references/*" 2>/dev/null)
   fi
 done
 for key in "${!REF_PRIORITY[@]}"; do

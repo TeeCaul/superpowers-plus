@@ -43,6 +43,12 @@ for dir in "${SOURCE_DIRS[@]}"; do
   #    doesn't flag renamed installs as orphaned.
   search_root="$dir"; [[ -d "$dir/skills" ]] && search_root="$dir/skills"
   while IFS= read -r sd; do
+    # Skip a nested worktree checkout found WITHIN this subtree (relative to
+    # search_root) — do not exclude on a bare substring match against the
+    # full path, which would wrongly match every file when the repo itself
+    # is checked out under a ".worktrees/" ancestor directory (this repo's
+    # own mandatory workflow for all new branches).
+    [[ "${sd#"$search_root"/}" == *.worktrees/* ]] && continue
     sd="${sd%/skill.md}"  # strip filename — 0 forks vs dirname subprocess
     _sname="${sd##*/}"
     _source_skill_names["$_sname"]=1
@@ -51,19 +57,20 @@ for dir in "${SOURCE_DIRS[@]}"; do
       _dest="$(_skill_dest_name "$sd")"
       [[ -n "$_dest" && "$_dest" != "$_sname" ]] && _source_skill_names["$_dest"]=1
     fi
-  done < <(find "$search_root" -name "skill.md" -not -path "*/references/*" -not -path "*/.worktrees/*" 2>/dev/null)
+  done < <(find "$search_root" -name "skill.md" -not -path "*/references/*" 2>/dev/null)
   # 2. .agents/skills/ subdir: SKILL.md format; install name derived from sp-trigger
   #    (e.g. source dir 'brainstorming' → installed as 'sp-brainstorm').
   #    _skill_dest_name() handles this mapping; fall back to dir basename if unavailable.
   if [[ -d "$dir/.agents/skills" ]]; then
     while IFS= read -r sd; do
+      [[ "${sd#"$dir/.agents/skills"/}" == *.worktrees/* ]] && continue
       _skill_dir="${sd%/*}"  # parent dir — works for both SKILL.md and skill.md
       if [[ "$_has_dest_name_fn" -eq 1 ]]; then
         _source_skill_names[$(_skill_dest_name "$_skill_dir")]=1
       else
         _source_skill_names["${_skill_dir##*/}"]=1
       fi
-    done < <(find "$dir/.agents/skills" -name "SKILL.md" -not -path "*/references/*" -not -path "*/.worktrees/*" 2>/dev/null)
+    done < <(find "$dir/.agents/skills" -name "SKILL.md" -not -path "*/references/*" 2>/dev/null)
   fi
 done
 while IFS= read -r installed; do
@@ -89,13 +96,17 @@ declare -A PRIORITY_SOURCE
 for dir in "${COMPARE_DIRS[@]}"; do
   search_root="$dir"; [[ -d "$dir/skills" ]] && search_root="$dir/skills"
   while IFS= read -r src; do
+    # Skip a nested worktree checkout WITHIN this subtree — relative to
+    # search_root, not a bare substring match against the full path (see
+    # the matching comment on the Check 8 loop above for why).
+    [[ "${src#"$search_root"/}" == *.worktrees/* ]] && continue
     # Extract skill name via bash string op — avoids basename+dirname subprocess pair.
     _parent="${src%/skill.md}"; skill="${_parent##*/}"
     if [[ "$dir" == "$SP_PLUS_DIR" ]]; then
       BASE_SOURCE["$skill"]="$src"
     fi
     PRIORITY_SOURCE[$skill]="$src"
-  done < <(find "$search_root" -name "skill.md" -not -path "*/references/*" -not -path "*/.worktrees/*" 2>/dev/null)
+  done < <(find "$search_root" -name "skill.md" -not -path "*/references/*" 2>/dev/null)
 done
 for skill in "${!PRIORITY_SOURCE[@]}"; do
   src="${PRIORITY_SOURCE[$skill]}"; installed="$INSTALLED_DIR/$skill/skill.md"

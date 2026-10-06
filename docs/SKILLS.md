@@ -2,10 +2,10 @@
 
 Complete list of skills in superpowers-plus. Auto-trigger skills fire based on context; explicit skills are invoked manually.
 
-<!-- SKILL-COUNT: 124 -->
+<!-- SKILL-COUNT: 125 -->
 <!-- Generated from skills/ directory. Update when adding or removing skills. -->
 
-## Engineering (55)
+## Engineering (56)
 
 | Skill | Description |
 |-------|-------------|
@@ -31,6 +31,7 @@ Complete list of skills in superpowers-plus. Auto-trigger skills fire based on c
 | `gitlab-cli` | Full reference card for GitLab operations via `glab`: MRs, CI/CD, variables, issues, raw API. Includes macOS/Windows install and auth walkthrough. |
 | `hotfix-charter` | Gates `hotfix/*` and `fix/<TICKET-ID>-*` branches on a HOTFIX-CHARTER.md. Prevents scope creep on emergency fixes. |
 | `implementation-tracker` | Maintains a living progress document across multi-session implementations. |
+| `incident-revert-review` | Reviews a proposed incident revert for the protection it removes, the failure it may restore, and an adjacent path to check before the change decision. |
 | `infra-config-investigator` | Diagnoses infrastructure, configuration, and deployment failures. |
 | `investigation-state` | Persists debugging context (hypotheses, evidence) across sessions. |
 | `llm-behavior-investigator` | Diagnoses LLM/prompt behavior issues: tool selection, prompt regressions, parsing failures. |
