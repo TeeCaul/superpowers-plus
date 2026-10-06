@@ -15,8 +15,8 @@ coordination:
   escalates_to: ["systematic-debugging"]
   internal: false
 composition:
-  consumes: [incident-link, proposed-change]
-  produces: [incident-change-risk-note]
+  consumes: [incident-record, revert-diff]
+  produces: [revert-risk-note]
   capabilities: [reviews-revert-risk, identifies-adjacent-paths]
   priority: 45
 ---
@@ -29,11 +29,11 @@ Use for a proposed revert or rollback during an incident, whether the change is 
 
 ## Inputs
 
-- Incident or issue link and the customer-visible symptom being mitigated.
+- The incident or issue, and the symptom users see that the revert is meant to stop.
 - Proposed revert PR/MR, commit, or diff, plus the original change it reverses. If the proposed diff does not exist yet, use the stated target commit and label code impact **unverified**.
 - Affected repo(s) and any available test or production evidence.
 
-If the original change or incident link cannot be found, do not reconstruct its intent from memory. Report the missing source and continue with the available diff as a limited review.
+When the original change or the incident record is missing, say so instead of guessing what the change was for, and review only what the diff shows.
 
 ## Review
 
@@ -43,19 +43,19 @@ If the original change or incident link cannot be found, do not reconstruct its 
 4. **Compare the options.** State the likely impact of reverting and of leaving the current behavior in place. Identify any protection the revert removes, the failure it could restore, and at least one plausible adjacent path that could worsen. If no adjacent path can be identified from the sources, mark that gap **unknown**, not safe.
 5. **Prepare verification.** Identify existing tests and the missing scenario, then name immediate checks for both the intended fix and the adjacent path. Name production signals, time windows, and denominators where available. Do not invent a traffic threshold or claim that a successful deploy proves recovery.
 
-## Output: incident change risk note
+## Output: revert risk note
 
 Keep the note short enough to link from the existing incident, PR/MR, or issue record. Render it for the requester; do not write to an external system unless separately asked.
 
-| Field | Required content |
+| Row | What it must say |
 |---|---|
-| Sources | Incident/issue, original change, proposed diff or target commit; identify unavailable sources |
+| Sources | The incident or issue, the original change, and the revert diff or target commit; name any that could not be found |
 | Intended outcome | Symptom the revert should resolve |
-| Removed protection and restored failure | Behavior the original change protected, evidence link, and confidence/unknowns |
+| What the revert takes away | The behavior the original change guarded, the evidence for it, and how sure that is |
 | Adjacent path | Concrete scenario that could worsen, with the affected boundary |
-| Option tradeoff | Revert risk and leave-in-place risk, each tied to evidence or labeled inference |
+| Revert vs. keep | The risk of each choice, each backed by evidence or marked as inference |
 | Checks | Existing tests, missing test, target and adjacent verification steps, production signals and denominators |
-| Open questions | Missing evidence and the next check needed for a decision |
+| Still unknown | Evidence that is missing and the next check that would settle it |
 
 Keep the decision owner and any later observation handoff in the authoritative incident record; this skill does not infer them.
 
