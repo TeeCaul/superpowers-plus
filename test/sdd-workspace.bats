@@ -141,6 +141,35 @@ setup() {
     [ "$(cat "$(cat out-1)/plan-path")" = plan.md ]
 }
 
+@test "sdd-workspace: a file at the lock path fails fast as an obstruction" {
+    echo "# plan" > plan.md
+    mkdir -p .superpowers/sdd
+    : > .superpowers/sdd/.workspace-lock
+    run timeout 8 bash "$SCRIPT" plan.md
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"cannot create workspace lock"* ]]
+}
+
+# A lock released between two separate stats (`-e` then `! -d`) looked like a
+# file obstruction and failed a waiting caller; it flaked CI under load. Widen
+# that window on purpose: insert a sleep before the obstruction check's last
+# test. The single-stat-per-test check stays correct; the old pair failed ~10%
+# of callers here.
+@test "sdd-workspace: a lock released mid-check is retried, not reported as an obstruction" {
+    echo "# plan" > plan.md
+    slow="$BATS_TEST_TMPDIR/sdd-workspace-slow"
+    sed 's/^  if \(.*\) || \[ -S "\$lock" \]; then$/  if \1 || { sleep 0.02; [ -S "$lock" ]; }; then/' "$SCRIPT" > "$slow"
+    grep -q 'sleep 0.02' "$slow"
+    for round in 1 2 3; do
+        pids=()
+        for n in $(seq 1 12); do
+            bash "$slow" plan.md > "out-$round-$n" 2>> err & pids+=("$!")
+        done
+        for pid in "${pids[@]}"; do wait "$pid"; done
+    done
+    [ ! -s err ] || { cat err; false; }
+}
+
 @test "sdd-workspace: stale lock fails with a recovery message within a bounded wait" {
     echo "# plan" > plan.md
     mkdir -p .superpowers/sdd/.workspace-lock
