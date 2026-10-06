@@ -337,7 +337,9 @@ import json, re
 # reading "approve push" on an unrelated question ("Which tests?") would let
 # one click grant approval. An answer counts only when its question is itself
 # about pushing, merging, releasing or the strict-check toggle.
-_APPROVAL_QUESTION = re.compile(r"push|merge|release|promot|deploy|strict", re.IGNORECASE)
+_APPROVAL_QUESTION = re.compile(
+    r"\b(push(es|ed|ing)?|merg(e|es|ed|ing)|releas(e|es|ed|ing)|promot\w*|deploy\w*|ship\w*|strict)\b",
+    re.IGNORECASE)
 
 def _structured_answers(obj):
     tur = obj.get("toolUseResult")

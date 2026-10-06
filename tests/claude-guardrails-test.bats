@@ -1376,18 +1376,17 @@ _fixture_transcript_cursor() {
 }
 
 @test "item 10: R11: RED-autonomy recognizes an approval phrase answered via AskUserQuestion" {
-  # Real transcript shape (verified against an actual Claude Code session):
-  # an AskUserQuestion answer is NOT a plain user chat message -- it's a
-  # user-role turn whose content is a tool_result
-  # block wrapping a plain string, keyed by tool_use_id back to the
-  # assistant's AskUserQuestion tool_use call. Question text deliberately
-  # contains no approval/revoke phrase of its own, so this test can only pass
-  # because the ANSWER text is what's being scanned, not the question.
+  # An AskUserQuestion answer is a user-role tool_result keyed by tool_use_id
+  # back to the assistant's AskUserQuestion call. The human's choice is read
+  # from the structured toolUseResult.answers, never from the rendered text
+  # (whose question side Claude writes), and only for a question about
+  # pushing. Question text contains no approval phrase of its own, so this can
+  # only pass because the ANSWER is what is read.
   local fake_home
   fake_home="$(_fresh_home)"
   TPATH="$(mktemp).jsonl"
   printf '%s\n' '{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_askq1","name":"AskUserQuestion","input":{}}]}}' > "$TPATH"
-  printf '%s\n' '{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_askq1","content":"Your questions have been answered: \"Ready to continue?\"=\"approve push\". You can now continue with these answers in mind."}]}}' >> "$TPATH"
+  printf '%s\n' '{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_askq1","content":"Your questions have been answered: \"Ready to push?\"=\"approve push\". You can now continue with these answers in mind."}]},"toolUseResult":{"questions":[],"answers":{"Ready to push?":"approve push"},"annotations":{}}}' >> "$TPATH"
   local hook="$REPO_ROOT/tools/claude-hooks/pre-tool-use-red-autonomy.sh"
   HOME="$fake_home" CLAUDE_HOOKS_PATTERNS_FILE_OVERRIDE="$REPO_ROOT/claude-config/red-autonomy-patterns.txt" \
     run bash "$hook" \
@@ -3753,4 +3752,12 @@ _legacy() { jq -cn --arg t "$1" '{type:"user",message:{role:"user",content:$t}}'
   _human "approve push"
   _red_run "$h"; rm -rf "$h"
   [ "$status" -eq 0 ]
+}
+
+@test "item 10: human-only: an approval label on a question that only contains 'push' inside a word does NOT approve" {
+  local h; h="$(_fresh_home)"; TPATH="$(mktemp "$BATS_TEST_TMPDIR/t.XXXXXX")"
+  _human "ok"
+  _askq "Any pushback on the test plan?" "approve push"
+  _red_run "$h"; rm -rf "$h"
+  [ "$status" -eq 2 ]
 }
