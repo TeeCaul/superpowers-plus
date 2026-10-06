@@ -22,6 +22,8 @@
 #                                                   supersedes gates 2 and 5 for this file class)
 #   7. tools/pre-push-loc-gate.sh                -- per-commit LOC advisory (warn by default; see
 #                                                   that script's own header for LOC_GATE_MODE)
+#   8. tools/pre-push-divergence-gate.sh         -- branch already contains its target (dev, or
+#                                                   main for dev/promote/*); DIVERGENCE_GATE=off
 #
 # INSTALL: ./tools/install-hooks.sh
 # Bypass:  `git push --no-verify` skips the hook entirely (git design limit).
@@ -73,6 +75,7 @@ BRANCH_FLOW_GATE="$TOOLS_DIR/pre-push-branch-flow-gate.sh"
 PHR_GATE="$TOOLS_DIR/pre-push-phr-gate.sh"
 LLM_SKILL_REVIEW_GATE="$TOOLS_DIR/pre-push-llm-skill-review-gate.sh"
 LOC_GATE="$TOOLS_DIR/pre-push-loc-gate.sh"
+DIVERGENCE_GATE_SCRIPT="$TOOLS_DIR/pre-push-divergence-gate.sh"
 
 # Remote name is passed as $1 by git
 REMOTE_NAME="${1:-origin}"
@@ -166,7 +169,7 @@ cat > "$STDIN_CAPTURE"
 # so a single push attempt reports every failing gate at once.
 ERRORS=0
 
-echo "  [Gate 1/7] Local fast test suite (tools/test-all.sh --fast)"
+echo "  [Gate 1/8] Local fast test suite (tools/test-all.sh --fast)"
 if [[ -f "$TEST_GATE" ]]; then
     bash "$TEST_GATE" < "$STDIN_CAPTURE" || ERRORS=$((ERRORS + 1))
 else
@@ -174,7 +177,7 @@ else
 fi
 echo ""
 
-echo "  [Gate 2/7] Code review clearance"
+echo "  [Gate 2/8] Code review clearance"
 if [[ -f "$CODE_REVIEW_GATE" ]]; then
     bash "$CODE_REVIEW_GATE" "$REMOTE_NAME" < "$STDIN_CAPTURE" || ERRORS=$((ERRORS + 1))
 else
@@ -189,7 +192,7 @@ else
 fi
 echo ""
 
-echo "  [Gate 3/7] Proprietary IP scan"
+echo "  [Gate 3/8] Proprietary IP scan"
 if [[ -f "$IP_SCAN_GATE" ]]; then
     bash "$IP_SCAN_GATE" "$REMOTE_NAME" < "$STDIN_CAPTURE" || ERRORS=$((ERRORS + 1))
 else
@@ -199,7 +202,7 @@ else
 fi
 echo ""
 
-echo "  [Gate 4/7] branch-flow sentinel (canonical-flow targets only)"
+echo "  [Gate 4/8] branch-flow sentinel (canonical-flow targets only)"
 if [[ -f "$BRANCH_FLOW_GATE" ]]; then
     bash "$BRANCH_FLOW_GATE" < "$STDIN_CAPTURE" || ERRORS=$((ERRORS + 1))
 else
@@ -207,7 +210,7 @@ else
 fi
 echo ""
 
-echo "  [Gate 5/7] PHR sentinel (design .md only, excludes skills/*.md)"
+echo "  [Gate 5/8] PHR sentinel (design .md only, excludes skills/*.md)"
 if [[ -f "$PHR_GATE" ]]; then
     bash "$PHR_GATE" "$REMOTE_NAME" < "$STDIN_CAPTURE" || ERRORS=$((ERRORS + 1))
 else
@@ -215,7 +218,7 @@ else
 fi
 echo ""
 
-echo "  [Gate 6/7] llm-skill-review sentinel (skills/*.md only)"
+echo "  [Gate 6/8] llm-skill-review sentinel (skills/*.md only)"
 if [[ -f "$LLM_SKILL_REVIEW_GATE" ]]; then
     bash "$LLM_SKILL_REVIEW_GATE" "$REMOTE_NAME" < "$STDIN_CAPTURE" || ERRORS=$((ERRORS + 1))
 else
@@ -229,7 +232,7 @@ else
 fi
 echo ""
 
-echo "  [Gate 7/7] Per-commit LOC advisory"
+echo "  [Gate 7/8] Per-commit LOC advisory"
 if [[ -f "$LOC_GATE" ]]; then
     # pre-push-loc-gate.sh's own arg-count dispatch requires >= 2 args to enter
     # its stdin/pre-push mode (unlike sibling gates here, which accept a single
@@ -240,6 +243,14 @@ if [[ -f "$LOC_GATE" ]]; then
     bash "$LOC_GATE" "$REMOTE_NAME" "(unused)" < "$STDIN_CAPTURE" || ERRORS=$((ERRORS + 1))
 else
     echo "  (skipped — tools/pre-push-loc-gate.sh not present)"
+fi
+echo ""
+
+echo "  [Gate 8/8] Branch contains its target (divergence)"
+if [[ -f "$DIVERGENCE_GATE_SCRIPT" ]]; then
+    bash "$DIVERGENCE_GATE_SCRIPT" "$REMOTE_NAME" < "$STDIN_CAPTURE" || ERRORS=$((ERRORS + 1))
+else
+    echo "  (skipped — tools/pre-push-divergence-gate.sh not present)"
 fi
 echo ""
 
