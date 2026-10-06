@@ -12,6 +12,8 @@ Usage:
 Options:
   -i, --ignore-case   case-insensitive pattern match
   --keep-going        skip pages that fail to fetch, print the rest, exit 4
+                      (still exits 3 if 3 pages in a row hit network, rate-limit
+                      or server errors: the wiki is down, not one page)
   --max-pages N       refuse trees larger than N pages (default 2000; exit 5)
   --delay SECONDS     pause between API calls (default 0.1)
   -v, --verbose       progress on stderr
@@ -36,8 +38,8 @@ published page tree, and the subtree under <root> is cut from it, so the tree
 shape never depends on a hand-paginated walk. Page text is then read in batches
 with documents.list (one call per 100 children of each parent). The expected
 children are already known from the tree, so any page a batch misses is read
-on its own with documents.info instead of being dropped. If a batch call fails,
-batching stops and every remaining page is read on its own.
+on its own with documents.info instead of being dropped. If a batch call still
+fails after retries, batching stops and every remaining page is read on its own.
 Draft pages are not part of the published tree, so a draft root or draft
 children are not swept; a draft root exits 3.
 
@@ -66,7 +68,11 @@ MAX_CONSECUTIVE_FAILURES = 3
 
 
 class ApiError(Exception):
-    pass
+    """transient=True: retries ran out on a network, rate-limit or server error."""
+
+    def __init__(self, msg, transient=False):
+        super().__init__(msg)
+        self.transient = transient
 
 
 def log(msg):
@@ -119,7 +125,7 @@ def call(endpoint, body, verbose=False, attempts=ATTEMPTS):
                 log(f"{endpoint} attempt {attempt}/{attempts} failed ({last}); retrying in {delay:g}s")
             time.sleep(delay)
             delay = min(delay * 2, MAX_BACKOFF)
-    raise ApiError(f"{endpoint}: {last} after {attempts} attempt(s)")
+    raise ApiError(f"{endpoint}: {last} after {attempts} attempt(s)", transient=True)
 
 
 def root_ref(raw):
@@ -179,8 +185,9 @@ def prefetch_text(pages, root_doc, opts):
 
     Returns {id: document} for every page a batch returned with its text. This
     is only a speed-up: pages missing here are read one by one by the caller,
-    so a batch problem never loses a page. The first failed batch call (one
-    attempt, no retries) turns batching off for the rest of the run.
+    so a batch problem never loses a page. A batch call that still fails
+    after its retries turns batching off for the rest of the run, so an outage
+    costs one parent's retries, not every parent's.
     """
     docs = {root_doc["id"]: root_doc} if "text" in root_doc else {}
     expected = OrderedDict()
@@ -195,7 +202,7 @@ def prefetch_text(pages, root_doc, opts):
             try:
                 batch = call("documents.list",
                              {"parentDocumentId": parent, "limit": 100, "offset": offset},
-                             opts.verbose, attempts=1)
+                             opts.verbose)
             except ApiError as exc:
                 if opts.verbose:
                     log(f"batch read failed ({exc}); reading remaining pages one by one")
@@ -243,7 +250,9 @@ def sweep(opts, pattern):
     out, failed, streak, matches, matched_pages = [], [], 0, 0, 0
     for pg in pages:
         doc = docs.get(pg["id"])
-        if doc is None:
+        if doc is not None:
+            streak = 0
+        else:
             try:
                 doc = read_page(pg, opts)
                 streak = 0
@@ -252,7 +261,9 @@ def sweep(opts, pattern):
                     log(f"ERROR: reading '{pg['title']}' ({pg['id']}): {exc}")
                     return EXIT_API, []
                 failed.append(pg)
-                streak += 1
+                # A page-specific error (403, 404) is what --keep-going skips;
+                # only repeated network/server failures mean the wiki is down.
+                streak = streak + 1 if exc.transient else 0
                 log(f"WARN: skipped '{pg['title']}' ({pg['id']}): {exc}")
                 if streak >= MAX_CONSECUTIVE_FAILURES:
                     log(f"ERROR: {streak} pages in a row failed; the wiki looks unavailable")
@@ -334,7 +345,13 @@ def main(argv):
         log(f"ERROR: unexpected {exc!r}")
         return EXIT_API
     if out:
-        sys.stdout.write("\n".join(out) + "\n")
+        try:
+            sys.stdout.write("\n".join(out) + "\n")
+            sys.stdout.flush()
+        except BrokenPipeError:
+            # The reader stopped early (e.g. `| head`); keep the real exit code
+            # and stop Python from failing again when it flushes at exit.
+            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
     return code
 
 

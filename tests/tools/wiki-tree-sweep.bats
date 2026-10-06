@@ -255,11 +255,23 @@ listing() {
   [ -z "$output" ]
 }
 
-@test "a failed batch call turns batching off instead of retrying each parent" {
+@test "a batch call that keeps failing turns batching off for every other parent" {
   echo 99 > "$FIX/documents.list__root@0.fail"     # 429 every time
   run --separate-stderr python3 "$TOOL" root needle
   [ "$status" -eq 0 ]
-  [ "$(grep -c '^documents.list' "$FIX/calls.log")" -eq 1 ]
+  # 4 attempts on the first parent, none on parents a and a1.
+  [ "$(grep -c '^documents.list' "$FIX/calls.log")" -eq 4 ]
+  [ "$(grep -c '^documents.list a' "$FIX/calls.log")" -eq 0 ]
+}
+
+@test "one rate-limited batch call is retried and batching continues" {
+  listing root 0 "a:needle in A" "b:beta"
+  listing a 0 "a1:plain"
+  listing a1 0 "a1x:deep needle"
+  echo 1 > "$FIX/documents.list__root@0.fail"
+  run --separate-stderr python3 "$TOOL" root needle
+  [ "$status" -eq 0 ]
+  [ "$(grep -c '^documents.info' "$FIX/calls.log")" -eq 1 ]
 }
 
 @test "paging stops when the server ignores offset" {
@@ -290,6 +302,25 @@ listing() {
   [ "$status" -eq 3 ]
   [[ "$stderr" == *"3 pages in a row failed"* ]]
   [ -z "$output" ]
+}
+
+@test "--keep-going skips pages that are forbidden, even several in a row" {
+  local id
+  for id in a a1 a1x; do
+    echo '{"ok":false,"error":"authorization_required","status":403}' > "$FIX/documents.info__$id.json"
+  done
+  run --separate-stderr python3 "$TOOL" --keep-going root 'beta|intro'
+  [ "$status" -eq 4 ]
+  [[ "$output" == *"beta"* ]]
+  [[ "$stderr" == *"INCOMPLETE: 3 page(s)"* ]]
+}
+
+@test "a reader that closes the pipe early does not turn matches into exit 1" {
+  # Far more output than a pipe buffer holds, so the write really hits EPIPE.
+  page b B "$(python3 -c 'print("needle\\n" * 50000, end="")')"
+  run bash -c "set -o pipefail; python3 '$TOOL' root needle 2>'$BATS_TEST_TMPDIR/err' | head -1 >/dev/null"
+  [ "$status" -eq 0 ]
+  ! grep -q Traceback "$BATS_TEST_TMPDIR/err" || return 1
 }
 
 # wiki-api is exercised with a fake curl that prints the URL it was given.

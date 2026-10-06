@@ -10,15 +10,16 @@ Takes one or more root page IDs/slugs and produces one JSON record per page with
 
 ```bash
 SWEEP=~/.codex/superpowers-plus/tools/wiki-tree-sweep.py
-rm -f pages.jsonl
-for r in ROOT1 ROOT2; do
-  if "$SWEEP" --jsonl "$r" > "root-$r.jsonl"; then cat "root-$r.jsonl" >> pages.jsonl
+rm -f pages.jsonl; i=0
+for r in ROOT1 ROOT2; do          # root ids, slugs, or page URLs
+  i=$((i+1)); out="root-$i.jsonl"
+  if "$SWEEP" --jsonl "$r" > "$out"; then cat "$out" >> pages.jsonl
   else echo "INCOMPLETE: $r (exit $?)"; fi
-  rm -f "root-$r.jsonl"
+  rm -f "$out"
 done
 ```
 
-Any `INCOMPLETE` line means re-run the whole loop before scoring; exit 5 means the tree is over the tool's page limit, so add `--max-pages N`. If roots overlap, dedupe `pages.jsonl` by `id` before scoring.
+Any `INCOMPLETE` line means re-run the whole loop before scoring; exit 5 means the tree is over the tool's page limit, so add `--max-pages N`. If roots overlap, dedupe `pages.jsonl` by `id`, keeping the first record, before scoring.
 
 **Other platforms:** adapt this enumerator to your wiki API: one list call per parent (paginate if needed; do NOT do one fetch per page). `ENUM_ERRORS` must be 0 for a complete audit; if any subtree is dropped, re-run rather than publish a partial worklist.
 
