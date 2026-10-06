@@ -333,18 +333,43 @@ PYEOF
 HUMAN_MESSAGES_PY=$(cat <<'PYLIB'
 import json, re
 
-def _rendered_answers(text):
-    # Legacy-only fallback: "<question>"="<answer>" pairs in rendered text.
-    if not isinstance(text, str):
-        return ""
-    return " ".join(re.findall(r'"[^"]*"\s*=\s*"([^"]*)"', text))
+# Claude writes the AskUserQuestion questions and option labels, so a label
+# reading "approve push" on an unrelated question ("Which tests?") would let
+# one click grant approval. An answer counts only when its question is itself
+# about pushing, merging, releasing or the strict-check toggle.
+_APPROVAL_QUESTION = re.compile(r"push|merge|release|promot|deploy|strict", re.IGNORECASE)
 
 def _structured_answers(obj):
     tur = obj.get("toolUseResult")
     answers = tur.get("answers") if isinstance(tur, dict) else None
     if not isinstance(answers, dict):
         return ""
-    return " ".join(v for v in answers.values() if isinstance(v, str))
+    return " ".join(v for k, v in answers.items()
+                    if isinstance(v, str) and isinstance(k, str) and _APPROVAL_QUESTION.search(k))
+
+# Records an origin-less (older or SDK) transcript still marks as not typed by
+# the human: harness wrappers, background-task results, sub-agent threads.
+_HARNESS_PREFIXES = ("<task-notification>", "<bash-input>", "<bash-stdout>", "<bash-stderr>",
+                     "<local-command-stdout>", "<local-command-caveat>", "<command-name>",
+                     "<command-message>", "<system-reminder>")
+_NOT_HUMAN_TURNS = {"peer", "task_notification", "task-notification", "auto_continuation",
+                    "auto-continuation", "system"}
+
+def _first_text(content):
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        for p in content:
+            if isinstance(p, dict) and isinstance(p.get("text"), str):
+                return p["text"]
+    return ""
+
+def _legacy_not_human(obj, content):
+    if obj.get("isSidechain") is True:
+        return True
+    if obj.get("promptSource") == "system" or obj.get("turnOrigin") in _NOT_HUMAN_TURNS:
+        return True
+    return _first_text(content).lstrip().startswith(_HARNESS_PREFIXES)
 
 def _text(content, ask_ids, obj, modern):
     """Text of a user-role record: plain text parts, plus answers to an
@@ -360,16 +385,11 @@ def _text(content, ask_ids, obj, modern):
                 parts.append(p["text"])
             elif p.get("type") == "tool_result" and isinstance(p.get("tool_use_id"), str) \
                     and p.get("tool_use_id") in ask_ids:
-                # Structured answers whenever the record has them (headless
-                # SDK sessions write toolUseResult but never origin); the
-                # rendered text only for older records without toolUseResult.
-                if modern or isinstance(obj.get("toolUseResult"), dict):
-                    parts.append(_structured_answers(obj))
-                else:
-                    raw = p.get("content", "")
-                    if isinstance(raw, list):
-                        raw = " ".join(x.get("text", "") for x in raw if isinstance(x, dict))
-                    parts.append(_rendered_answers(raw))
+                # Structured answers only (headless SDK sessions write
+                # toolUseResult but never origin). The rendered text is never
+                # read: its question side is Claude's and could be shaped to
+                # look like an answer. Without toolUseResult, nothing counts.
+                parts.append(_structured_answers(obj))
     return " ".join(parts)
 
 def _ask_answer_only(content, ask_ids, obj):
@@ -460,7 +480,7 @@ def human_messages(path):
                     t = _text(content, ask_ids, obj, modern)
             elif modern:
                 t = _ask_answer_only(content, ask_ids, obj)
-            else:
+            elif not _legacy_not_human(obj, content):
                 t = _text(content, ask_ids, obj, modern)
         if t.strip():
             msgs.append(t)
@@ -632,6 +652,7 @@ REVOKE_PHRASES = [
     r'\brevoke\s+strict[\s-]?disable\b',
     r'\bcancel\s+strict[\s-]?disable\b',
     r'\bdo\s+not\s+disable\s+strict\b',
+    r"\b(?:do\s+not|don'?t|never|not)\s+approve\s+strict[\s-]?disable",
 ]
 
 transcript_path = sys.argv[1]
@@ -749,6 +770,7 @@ REVOKE_PHRASES = [
     r'\brevoke\s+push\b',
     r'\bcancel\s+push\b',
     r'\bdo\s+not\s+push\b',
+    r"\b(?:do\s+not|don'?t|never|not)\s+approve\s+(?:the\s+)?push",
     r'\bstop\s+pushing\b',
 ]
 
@@ -967,6 +989,7 @@ REVOKE_PHRASES = [
     r'\brevoke\s+push\b',
     r'\bcancel\s+push\b',
     r'\bdo\s+not\s+push\b',
+    r"\b(?:do\s+not|don'?t|never|not)\s+approve\s+(?:the\s+)?push",
     r'\bstop\s+pushing\b',
 ]
 
@@ -1023,6 +1046,8 @@ with open(transcript_path, encoding='utf-8', errors='replace') as f:
             continue
         try:
             obj = json.loads(line)
+            if not isinstance(obj, dict):
+                continue
         except json.JSONDecodeError:
             continue
         a_content = _assistant_content(obj)
