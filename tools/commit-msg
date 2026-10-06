@@ -128,4 +128,11 @@ if [[ -n "$_HASH_SCAN_SCRIPT" && -f "$_HASH_SCAN_SCRIPT" ]]; then
     fi
 fi
 
+# Review-tooling jargon in the message: warn only, never blocks (see the
+# script's own header for what is scanned and when it stays quiet).
+_JARGON_SCRIPT="${_REPO_ROOT_FOR_HASH_SCAN:+$_REPO_ROOT_FOR_HASH_SCAN/tools/commit-msg-jargon.py}"
+if [[ -n "$_JARGON_SCRIPT" && -f "$_JARGON_SCRIPT" ]]; then
+    python3 "$_JARGON_SCRIPT" "$COMMIT_MSG_FILE" || true
+fi
+
 exit 0
