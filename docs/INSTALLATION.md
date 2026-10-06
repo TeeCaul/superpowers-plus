@@ -101,7 +101,7 @@ If you're using the install paths above without an MCP client, you can skip this
    }
    ```
 
-3. Restart your client. Verify: run `find_skills` in the MCP client. Expected output includes the 124 superpowers-plus skills, plus any other skills installed on the machine.
+3. Restart your client. Verify: run `find_skills` in the MCP client. Expected output includes the 125 superpowers-plus skills, plus any other skills installed on the machine.
 
 If `find_skills` returns an error or is missing: check `node --version` (must be 18+), rerun `cd mcp && npm install`, and confirm the args path is absolute (not `~/` or relative).
 
@@ -123,7 +123,7 @@ After running `install.sh`, confirm skills loaded successfully:
 
 ```bash
 node ~/.codex/superpowers-augment/superpowers-augment.js find-skills
-# Expected: skill catalog printed without errors (superpowers-plus contributes 124 skills)
+# Expected: skill catalog printed without errors (superpowers-plus contributes 125 skills)
 ```
 
 Run the full 30-check diagnostic:

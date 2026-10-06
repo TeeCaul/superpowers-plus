@@ -8,7 +8,7 @@ Run ONE combined reviewer by default. Dispatches up to 7 specialized reviewer ag
 **Why this exists**: A single reviewer tries to evaluate everything simultaneously, leading to shallow coverage, inconsistent focus, and ~40% false positive rates. Specialized reviewers with focused prompts produce deeper analysis with near-zero false positives.
 ## Procedure
 ### Phase 0: Sentinel Check (canonical skip gate — run before dispatching anything)
-This is the canonical skip gate for the one-per-unit rule. Callers (`requesting-code-review`, `finishing-a-development-branch`, `progressive-code-review-gate`) should run this before dispatching. If a caller does not implement Phase 0 explicitly, the agent should apply this decision manually before invoking battery.
+This is the canonical skip gate for the one-per-unit rule. **Run `tools/review-preflight.py` first** (`--base <integration-branch>`, default `origin/dev`, or `--staged` for an uncommitted change; pass `--mode=bug-fix|feature` when given) and use its JSON -- sentinel states, BugPath mode, fired signal rows with file:line hits, rows left to judgment, and the inline-exemption answer -- instead of applying the Phase 0-1 tables by hand; the tables stay the spec. Callers (`requesting-code-review`, `finishing-a-development-branch`, `progressive-code-review-gate`) should run this before dispatching. If a caller does not implement Phase 0 explicitly, the agent should run the preflight (or apply the tables) before invoking battery.
 
 ```bash
 SENTINEL="$(git rev-parse --show-toplevel 2>/dev/null || echo .)/.code-review-cleared"
@@ -21,10 +21,10 @@ git diff --quiet && git diff --cached --quiet && echo "WORKTREE_CLEAN" || echo "
 | Sentinel state | Decision |
 |----------------|----------|
 | `NO CLEARANCE` | Run battery (proceed to Phase 1). |
-| Sentinel SHA ≠ HEAD SHA | Run battery (battery is stale). |
+| Sentinel SHA ≠ HEAD SHA, and preflight does not report it `carried` (no in-scope file changed) | Run battery (battery is stale). |
 | Sentinel valid for HEAD but `WORKTREE_DIRTY` | Run battery (staged/unstaged changes exist that were not reviewed). |
-| Valid sentinel for HEAD AND `WORKTREE_CLEAN` | **Skip.** Battery already ran on the current code. Note the clearance and skip to Phase 6. |
-| Malformed | Delete `.code-review-cleared`, run battery. |
+| Valid sentinel for HEAD (or `carried`) AND `WORKTREE_CLEAN` | **Skip.** Battery already ran on the current code. Note the clearance and skip to Phase 6. |
+| Malformed, or preflight `not-clearing` (verdict does not clear the gate) | Delete `.code-review-cleared`, run battery. |
 ### Phase 0.5: BugPath Mode Detection
 > **Load gate:** This phase requires `reference.md` to be loaded alongside this skill. If absent AND the branch matches a BugPath pattern (`hotfix/*` or `fix/[A-Z]+-[0-9]+`, per the detection script in `reference.md`): **hard halt** — emit only: "Cannot enter BugPath Mode: reference.md is absent. Load it before proceeding." Output nothing further — no phase summaries, no partial results, no clarifying questions. Return control to the user. If absent AND the branch does NOT match a BugPath pattern: treat BugPath Mode as INACTIVE and note in triage line.
 
@@ -149,7 +149,7 @@ Prerequisite: Correlated-Failure Detection has completed and no re-examination w
 **Preserve the run (before sentinel write):**
 
 1. Determine the verdict from this MR's score vs threshold: PASS if score >= threshold (no unresolved nits); PASS_WITH_NITS if at or above threshold but Minor nits remain; PASS_WITH_FIXES if below threshold, every Critical finding is Implement-classified (fixable path exists — vacuously true if there are no Critical findings), and every Important finding is Implement- or Defer-classified with a documented rationale in the report (llm-skill-review dogfood review, 2026-07-17: a Critical is NEVER Defer-classified, with or without rationale — that always forces REJECT; a follow-up pass the same day found the first fix still left exactly this Critical+Defer combination unmapped); REJECT if any Critical is Reject- or Defer-classified, any Important Defer has no documented rationale, or there are unresolvable blockers.
-2. Write a JSON envelope to `.cr-battery-runs/<HEAD-sha>.json`. Schema: `reference.md` § Run Envelope Schema. Every finding AND clean-dimension verdict must carry an `evidence` block; `verifiable: false` caps at 7.0. Expectation types: `reference.md` § Verifier Details. `tools/run-battery.sh` refuses sentinel write if JSON missing in Bug Fix Mode; graceful degrade in Standard Mode. Note: `collateral_test_changes` is not yet captured in the run envelope schema — it appears only in the human-readable report. Tracked in `candidates/candidate-009.yaml` for future schema update.
+2. Write a JSON envelope to `.cr-battery-runs/<HEAD-sha>.json` with `tools/review-envelope.py` (`init --kind battery`, `add-clean`/`add-finding`, `resolve`, `set`, `check`): it runs each evidence command as the claim is written and refuses one whose expectation fails. Schema: `reference.md` § Run Envelope Schema. Every finding AND clean-dimension verdict must carry an `evidence` block; `verifiable: false` caps at 7.0. Expectation types: `reference.md` § Verifier Details. `tools/run-battery.sh` refuses sentinel write if JSON missing in Bug Fix Mode; graceful degrade in Standard Mode. Note: `collateral_test_changes` is not yet captured in the run envelope schema — it appears only in the human-readable report. Tracked in `candidates/candidate-009.yaml` for future schema update.
 
 If final verdict is `PASS` or `PASS_WITH_NITS` (all nits resolved):
 

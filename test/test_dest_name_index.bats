@@ -154,3 +154,42 @@ _setup_index() {
   run _build_dest_name_index "$TEST_TMPDIR/repo-e"
   [[ "$output" =~ "WARNING" ]]
 }
+
+# --- Nested worktrees -----------------------------------------------------
+# A nested worktree inside the scanned tree is skipped; a repo that is itself
+# checked out under a ".worktrees/" directory is still indexed.
+_wt_index() {  # $1 = root to index; prints the indexed source names, sorted
+  bash -c 'source "$REPO_ROOT/lib/install/skill-naming.sh"
+    declare -A SOURCE_DEST_NAME DEST_NAME_SOURCE DEST_NAMES_SET
+    _build_dest_name_index "$1"
+    printf "%s\n" "${!SOURCE_DEST_NAME[@]}" | sort | tr "\n" " "' _ "$1"
+}
+_wt_skill() { mkdir -p "$1"; printf -- '---\nname: %s\n---\nBody.\n' "${1##*/}" > "$1/skill.md"; }
+
+@test "worktrees: a repo checked out under a .worktrees/ directory is indexed" {
+  local d; d="$(mktemp -d)"
+  _wt_skill "$d/.worktrees/repo/skills/alpha"
+  run _wt_index "$d/.worktrees/repo"
+  [ "$output" = "alpha " ]
+  run _wt_index "$d/.worktrees/repo/skills/"
+  [ "$output" = "alpha " ]
+  rm -rf "$d"
+}
+
+@test "worktrees: a nested worktree inside skills/ is skipped" {
+  local d; d="$(mktemp -d)"
+  _wt_skill "$d/repo/skills/alpha"
+  _wt_skill "$d/repo/skills/.worktrees/branch/skills/zeta"
+  run _wt_index "$d/repo"
+  [ "$output" = "alpha " ]
+  rm -rf "$d"
+}
+
+@test "worktrees: a directory whose name merely ends in .worktrees is still indexed" {
+  local d; d="$(mktemp -d)"
+  _wt_skill "$d/repo/skills/alpha"
+  _wt_skill "$d/repo/skills/my.worktrees/beta"
+  run _wt_index "$d/repo"
+  [ "$output" = "alpha beta " ]
+  rm -rf "$d"
+}

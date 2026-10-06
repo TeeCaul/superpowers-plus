@@ -63,7 +63,11 @@ mkdir -p "$base" || { echo "cannot create workspace base: $base" >&2; exit 1; }
 lock="$base/.workspace-lock"
 attempt=0
 until mkdir "$lock" 2>/dev/null; do
-  if [ -e "$lock" ] && [ ! -d "$lock" ]; then
+  # Fail only when something that is not a directory sits at the lock path.
+  # Each test below is one stat, so a lock directory released mid-check reads
+  # as "nothing there" and we retry. The old `-e && ! -d` pair raced: a release
+  # between its two stats made a held lock look like an obstruction.
+  if [ -f "$lock" ] || [ -L "$lock" ] || [ -p "$lock" ] || [ -S "$lock" ]; then
     echo "cannot create workspace lock: $lock" >&2; exit 1
   fi
   [ -w "$base" ] || { echo "workspace base is not writable: $base" >&2; exit 1; }

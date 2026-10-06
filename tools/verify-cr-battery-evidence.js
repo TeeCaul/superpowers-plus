@@ -178,9 +178,20 @@ function parseExpectation(stdout, exitCode, expectation) {
   }
 }
 
+function withOutput(result, stdout, exitCode, opts) {
+  if (opts && opts.withOutput) {
+    result.stdout = truncate(String(stdout == null ? '' : stdout), 4096);
+    result.exit_code = exitCode;
+  }
+  return result;
+}
+
 function truncate(s, n) { return s.length > n ? s.slice(0, n) + '...' : s; }
 
-function replay(claim, cwd) {
+// opts.withOutput: also return the command's stdout (first 4KB) and exit code,
+// so a caller that shows a refused claim's output need not run it twice.
+// The envelope path (processClaims) never sets it, so envelopes stay small.
+function replay(claim, cwd, opts) {
   if (!claim || !claim.evidence) {
     return { status: 'no-evidence', detail: 'no evidence block present' };
   }
@@ -215,7 +226,7 @@ function replay(claim, cwd) {
     }
     const exitCode = r.status;
     const stdout   = r.stdout || '';
-    return parseExpectation(stdout, exitCode, ev.expectation);
+    return withOutput(parseExpectation(stdout, exitCode, ev.expectation), stdout, exitCode, opts);
   }
   if (!ev.command || typeof ev.command !== 'string') {
     return { status: 'error', detail: 'evidence must include either argv (array) or command (string)' };
@@ -252,7 +263,7 @@ function replay(claim, cwd) {
       return { status: 'error', detail: `command spawn failed: ${err.message}` };
     }
   }
-  return parseExpectation(stdout, exitCode, ev.expectation);
+  return withOutput(parseExpectation(stdout, exitCode, ev.expectation), stdout, exitCode, opts);
 }
 
 function capDimension(state, reviewer, dimension, cap, claim) {

@@ -1,7 +1,7 @@
 {
   "name": "superpowers-plus",
   "displayName": "Superpowers Plus",
-  "description": "124 skills for AI coding assistants: engineering gates, code review, wiki, issue tracking, security audits, AI slop detection. Extends obra/superpowers.",
+  "description": "125 skills for AI coding assistants: engineering gates, code review, wiki, issue tracking, security audits, AI slop detection. Extends obra/superpowers.",
   "version": "5.3.0",
   "author": {
     "name": "Matt Bordenet",
