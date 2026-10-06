@@ -10,7 +10,7 @@
 #
 # TARGET, per pushed branch (the remote ref name, not the local one):
 #   dev, promote/*   -> main   (a promotion must already contain main)
-#   sync/*, */sync-*, sync-*
+#   sync/*, *sync-dev-*
 #                    -> main   (a sync branch is cut from main and merged into
 #                               dev, e.g. chore/sync-dev-with-main; AGENTS.md)
 #   main             -> none   (main is the root of the flow)
@@ -73,7 +73,7 @@ target_for() {
     done
     case "$branch" in
         main)                                 echo "" ;;
-        dev|promote/*|sync/*|*/sync-*|sync-*) echo "main" ;;
+        dev|promote/*|sync/*|*sync-dev-*)     echo "main" ;;
         *)                                    echo "dev" ;;
     esac
 }
@@ -87,6 +87,17 @@ if [[ "$(git rev-parse --is-shallow-repository 2>/dev/null)" == "true" ]]; then
     echo "  divergence gate: shallow clone, history is incomplete, not checked"
     exit 0
 fi
+
+fetch_target() {
+    local refspec="+refs/heads/$1:refs/remotes/$REMOTE/$1"
+    if [[ -z "${GIT_SSH_COMMAND:-}" && -z "${GIT_SSH:-}" ]] \
+            && ! git config --get core.sshCommand >/dev/null 2>&1; then
+        GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="ssh -o BatchMode=yes" \
+            git fetch --quiet "$REMOTE" "$refspec" </dev/null
+    else
+        GIT_TERMINAL_PROMPT=0 git fetch --quiet "$REMOTE" "$refspec" </dev/null
+    fi
+}
 
 BEHIND=0
 FETCHED=" "   # targets fetched successfully this run, space-delimited
@@ -115,15 +126,16 @@ while read -r _local_ref local_sha remote_ref remote_sha; do
     if [[ "$FETCHED" != *" $target "* ]]; then
         # "+": a force-rewritten target must still update the tracking ref, or
         # the comparison below would run against the stale one. No prompts: a
-        # hook must never wait for a password or key touch.
-        if fetch_err="$(GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh} -o BatchMode=yes" \
-                git fetch --quiet "$REMOTE" "+refs/heads/$target:refs/remotes/$REMOTE/$target" \
-                </dev/null 2>&1)"; then
+        # hook must never wait for a password or key touch. BatchMode is added
+        # only when the user has no ssh command of their own: GIT_SSH_COMMAND
+        # outranks core.sshCommand and GIT_SSH, so forcing it would replace a
+        # configured key or wrapper and make every fetch fail.
+        if fetch_err="$(fetch_target "$target" 2>&1)"; then
             FETCHED+="$target "
         else
             FAILED+="$target "
             echo "  ⚠ $branch: could not fetch $REMOTE/$target, divergence not checked"
-            printf '%s\n' "$fetch_err" | sed -n '1,3s/^/      git: /p'
+            printf '%s\n' "$fetch_err" | grep -v '^[[:space:]]*$' | sed -n '1,3s/^/      git: /p'
             continue
         fi
     fi

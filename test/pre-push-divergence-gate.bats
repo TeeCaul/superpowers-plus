@@ -219,16 +219,18 @@ refs/heads/feat/fresh $(git rev-parse feat/fresh) refs/heads/feat/fresh $ZERO_SH
 @test "sync branch names target main; names that merely contain sync do not" {
     advance dev 2
     git fetch -q origin
-    for b in sync/main-into-dev-1 chore/sync-dev-after-retirement sync-dev; do
+    for b in sync/main-into-dev-1 chore/sync-dev-after-retirement chore/sync-dev-with-main-v2; do
         git checkout -q -B "$b" origin/main
         run bash "$SCRIPT" origin <<< "$(line "$b")"
         [ "$status" -eq 0 ]
         [[ "$output" == *"contains origin/main"* ]]
     done
-    git checkout -q -B feat/async-x origin/main
-    run bash "$SCRIPT" origin <<< "$(line feat/async-x)"
-    [ "$status" -eq 1 ]
-    [[ "$output" == *"origin/dev"* ]]
+    for b in feat/async-x feat/sync-calendar; do
+        git checkout -q -B "$b" origin/main
+        run bash "$SCRIPT" origin <<< "$(line "$b")"
+        [ "$status" -eq 1 ]
+        [[ "$output" == *"origin/dev"* ]]
+    done
 }
 
 @test "a main target is told to merge, never to rebase" {
@@ -251,4 +253,15 @@ refs/heads/feat/fresh $(git rev-parse feat/fresh) refs/heads/feat/fresh $ZERO_SH
     [[ "$output" == *"with-lease"* ]]
     run bash "$SCRIPT" origin <<< "$(line feat/new)"
     [[ "$output" != *"with-lease"* ]]
+}
+
+@test "a configured ssh command is used for the fetch, not replaced" {
+    unset GIT_SSH_COMMAND GIT_SSH
+    printf '#!/bin/sh\necho used >> "%s/ssh.log"\nexit 1\n' "$BATS_TEST_TMPDIR" > "$BATS_TEST_TMPDIR/myssh"
+    chmod +x "$BATS_TEST_TMPDIR/myssh"
+    git remote set-url origin ssh://example.invalid/r.git
+    git config core.sshCommand "$BATS_TEST_TMPDIR/myssh"
+    run bash "$SCRIPT" origin <<< "$(line feat/x)"
+    [ "$status" -eq 0 ]
+    grep -q used "$BATS_TEST_TMPDIR/ssh.log"
 }
