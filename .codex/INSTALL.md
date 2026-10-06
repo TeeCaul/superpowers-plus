@@ -1,6 +1,6 @@
 # Installing Superpowers Plus for Codex
 
-124 skills for engineering workflows, code review, wiki editing, issue tracking, security audits, and more. Extends [obra/superpowers](https://github.com/obra/superpowers); all 14 of its core workflow skills are bundled.
+125 skills for engineering workflows, code review, wiki editing, issue tracking, security audits, and more. Extends [obra/superpowers](https://github.com/obra/superpowers); all 14 of its core workflow skills are bundled.
 
 ## Prerequisites
 
@@ -31,7 +31,7 @@ The installer automatically:
 
 ```bash
 node ~/.codex/superpowers-augment/superpowers-augment.js find-skills
-# Expected: the 124 superpowers-plus skills (14 bundled from obra/superpowers), plus any others installed
+# Expected: the 125 superpowers-plus skills (14 bundled from obra/superpowers), plus any others installed
 ```
 
 ## Updating

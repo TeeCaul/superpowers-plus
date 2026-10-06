@@ -6,7 +6,7 @@
 
 AI coding assistants skip the practices that keep bugs out of production. They implement the first idea without weighing alternatives, patch symptoms instead of finding root causes, and declare work done without verifying it. Asking them to behave better in a system prompt doesn't hold: under context pressure, the instructions get forgotten.
 
-superpowers-plus is 124 skills that make an assistant follow those practices, plus the machinery that enforces them from outside the model. Skills give the assistant a procedure: reproduce before fixing, generate three designs before picking one, send a diff to parallel specialist reviewers. Lifecycle hooks and git commit gates check the result. Git runs those gates whether or not the assistant remembers to ask for review.
+superpowers-plus is 125 skills that make an assistant follow those practices, plus the machinery that enforces them from outside the model. Skills give the assistant a procedure: reproduce before fixing, generate three designs before picking one, send a diff to parallel specialist reviewers. Lifecycle hooks and git commit gates check the result. Git runs those gates whether or not the assistant remembers to ask for review.
 
 It builds on Jesse Vincent's [obra/superpowers](https://github.com/obra/superpowers). Superpowers teaches an agent how to work; superpowers-plus adds more skills and the hooks and gates that make the work hard to skip. It also covers non-coding work: documents, wikis, issue tracking, research.
 
@@ -39,9 +39,9 @@ The Claude Desktop app has three tabs. `bash install.sh` sets up the Code tab an
 
 | Tab | What you get | Extra steps |
 |-----|--------------|-------------|
-| **Code** | Everything Claude Code gets: all 124 skills, lifecycle hooks, and approval guardrails | None beyond the [Quick Start](#quick-start). The Code tab runs the same engine as the Claude Code CLI and reads the same `~/.claude/` skills, hooks, and settings |
+| **Code** | Everything Claude Code gets: all 125 skills, lifecycle hooks, and approval guardrails | None beyond the [Quick Start](#quick-start). The Code tab runs the same engine as the Claude Code CLI and reads the same `~/.claude/` skills, hooks, and settings |
 | **Chat** and **Cowork** | Eleven of the skills, the ones whose core steps work without a shell or this repo: brainstorming, debate, plan writing, AI slop detection and rewriting, and others | Upload the ZIPs that `install.sh` builds (below) |
-| **Chat** (optional) | Read access to all 124 skills through the `find_skills`, `use_skill`, and `match_skills` tools | Add the [MCP server](docs/INSTALLATION.md#mcp-server-optional) to `claude_desktop_config.json`. Skills that run repo scripts or depend on hooks won't fully work in Chat |
+| **Chat** (optional) | Read access to all 125 skills through the `find_skills`, `use_skill`, and `match_skills` tools | Add the [MCP server](docs/INSTALLATION.md#mcp-server-optional) to `claude_desktop_config.json`. Skills that run repo scripts or depend on hooks won't fully work in Chat |
 
 **Code tab.** Local sessions load `~/.claude/skills/` and the hooks in `~/.claude/settings.json`, so they behave the same as Claude Code in a terminal. The git commit and push gates run in any repo where `tools/install-hooks.sh` has installed them, whichever app made the commit. Cloud sessions don't read `~/.claude/`, and an SSH session reads the remote machine's copy, so run `install.sh` there too.
 
@@ -108,7 +108,7 @@ One rule outranks the byte savings: hard gates and "never" rules always stay in 
 | [**detecting-ai-slop**](skills/writing/detecting-ai-slop/skill.md) | Scores text 0-100 for machine-generated patterns across lexical, structural, semantic, and stylometric signals |
 | [**evolution-loop**](skills/observability/evolution-loop/skill.md) | Scans failures for recurring patterns and proposes skill updates |
 
-All 124 skills: [docs/SKILLS.md](docs/SKILLS.md). How they connect: [docs/SKILL_TAXONOMY.md](docs/SKILL_TAXONOMY.md).
+All 125 skills: [docs/SKILLS.md](docs/SKILLS.md). How they connect: [docs/SKILL_TAXONOMY.md](docs/SKILL_TAXONOMY.md).
 
 ## Platform Support
 
