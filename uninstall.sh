@@ -247,6 +247,14 @@ remove_cli_links() {
     for dir in /usr/local/bin "$HOME/.local/bin" "$HOME/bin"; do
         [[ -d "$dir" ]] || continue
         for link in "$dir"/sp-*; do
+            # Git Bash installs write wrapper scripts instead of symlinks.
+            if [[ -f "$link" && ! -L "$link" ]] \
+                && grep -qF "# superpowers-plus sp-* wrapper" "$link" 2>/dev/null \
+                && grep -qF "exec bash \"$MANAGED_DIR/" "$link" 2>/dev/null; then
+                run_rm "$link"
+                removed=$((removed + 1))
+                continue
+            fi
             [[ -L "$link" ]] || continue
             target="$(readlink "$link")"
             # Resolve relative targets against the link's own directory,

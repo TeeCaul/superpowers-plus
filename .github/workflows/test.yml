@@ -189,6 +189,63 @@ jobs:
         continue-on-error: true
         run: bash tools/skill-size-audit.sh
 
+  windows-install:
+    name: Windows Install (Git Bash)
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure git identity
+        shell: bash
+        run: |
+          git config --global user.email "ci@superpowers-plus.test"
+          git config --global user.name "CI Runner"
+
+      - name: install.ps1 (Git Bash bootstrap + install.sh)
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -NoPrereqInstall
+
+      - name: Verify installed state
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$(ls -A "$HOME/.claude/skills")"
+          test -n "$(ls -A "$HOME/.codex/skills")"
+          test -n "$(ls -A "$HOME/.agents/skills")"
+          test -x "$HOME/.claude/hooks/pre-tool-use-red-autonomy.sh"
+          "$HOME/.local/bin/python3" -c 'import sys; assert sys.version_info >= (3, 8)'
+          [ "$(powershell -NoProfile -Command "[Environment]::GetEnvironmentVariable('PYTHONUTF8','User')" | tr -d '\r')" = "1" ]
+          [ -n "$(powershell -NoProfile -Command "[Environment]::GetEnvironmentVariable('CLAUDE_CODE_GIT_BASH_PATH','User')" | tr -d '\r')" ]
+
+      - name: python3.cmd shim (PowerShell)
+        shell: powershell
+        run: |
+          & "$HOME\.local\bin\python3.cmd" -c 'import sys; assert sys.version_info >= (3, 8)'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: install.ps1 -SkillsOnly (native fallback)
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -SkillsOnly
+
+      # Advisory until the suite is ported to Git Bash; failures are reported, not blocking.
+      - name: Bats under Git Bash (advisory)
+        continue-on-error: true
+        shell: bash
+        run: |
+          npm install -g bats
+          export PATH="$HOME/.local/bin:$PATH" PYTHONUTF8=1
+          bats test/
+
+      - name: install.ps1 -Uninstall
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Uninstall
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (Test-Path "$HOME\.local\bin\python3") { throw 'python3 shim not removed' }
+          if (Test-Path "$HOME\.local\bin\python3.cmd") { throw 'python3.cmd shim not removed' }
+
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest

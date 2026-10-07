@@ -863,7 +863,9 @@ install_cli_commands() {
     # Scanning profiles (not $PATH) catches cross-shell gaps — e.g., installing
     # from zsh when an AI agent runs bash with no ~/.bash_profile.
     # Fish/nushell configs are not checked (different PATH syntax).
-    if ! _cli_bin_dir_in_profiles "$bin_dir"; then
+    # Git Bash on Windows takes PATH from the Windows environment, which
+    # install.ps1 manages, so profiles are not consulted there.
+    if [[ "${PLATFORM:-}" != "windows" ]] && ! _cli_bin_dir_in_profiles "$bin_dir"; then
         log_warn "sp-* commands installed to $bin_dir but that path was not found"
         log_warn "in any POSIX shell profile (~/.bash_profile, ~/.bashrc, ~/.zshrc, etc.)."
         log_warn "Commands may be invisible in some shells. Add to each relevant profile:"
@@ -877,6 +879,28 @@ install_cli_commands() {
         # sp-update.sh → sp-update, sp-doctor.sh → sp-doctor
         local cmd_name="${basename%.sh}"
         local link="$bin_dir/$cmd_name"
+
+        # Git Bash's ln -s copies the file unless MSYS=winsymlinks is set, and a
+        # copy breaks scripts that locate siblings via BASH_SOURCE. Use a
+        # wrapper that execs the installed script instead.
+        if [[ "${PLATFORM:-}" == "windows" ]]; then
+            local wrapper_marker="# superpowers-plus sp-* wrapper"
+            # A plain copy of $script is what an earlier ln -s left behind; replace it.
+            if [[ -e "$link" ]] && ! grep -qF "$wrapper_marker" "$link" 2>/dev/null \
+                && ! cmp -s "$link" "$script"; then
+                log_warn "$cmd_name exists at $link but is not a superpowers-plus wrapper — skipping (if it is an outdated copy from an earlier install, delete it and re-run)"
+                continue
+            fi
+            # rm first: writing through a real symlink would overwrite $script.
+            if rm -f "$link" \
+                && printf '#!/usr/bin/env bash\n%s\nexec bash "%s" "$@"\n' "$wrapper_marker" "$script" > "$link" \
+                && chmod +x "$link" 2>/dev/null; then
+                installed=$((installed + 1))
+            else
+                log_warn "Failed to write $cmd_name wrapper to $bin_dir"
+            fi
+            continue
+        fi
 
         # Create or update symlink
         if [[ -L "$link" ]]; then
@@ -1081,9 +1105,9 @@ export_augment_menu_skills() {
             python3 -c "
 import sys, re
 path = sys.argv[1]; new_name = sys.argv[2]
-with open(path, 'r') as f: content = f.read()
+with open(path, 'r', encoding='utf-8', newline='') as f: content = f.read()
 content = re.sub(r'^name: .*', 'name: ' + new_name, content, count=1, flags=re.MULTILINE)
-with open(path, 'w') as f: f.write(content)
+with open(path, 'w', encoding='utf-8', newline='') as f: f.write(content)
 " "$dest/SKILL.md" "$dest_name" || log_warn "Failed to update name: field in $dest/SKILL.md"
         fi
 

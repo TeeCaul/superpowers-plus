@@ -31,7 +31,63 @@ Then tell your assistant what you're doing:
 | "Check for security issues" | `repo-security-scan` covers secrets, dependencies, risky patterns, and config |
 | "I'm about to commit" | `unified-commit-gate` runs lint/build/test, style, review, language, and IP audit |
 
-Full install options (Claude Code plugin, Codex, OpenCode, MCP server, Windows/WSL) are in [docs/INSTALLATION.md](docs/INSTALLATION.md).
+Full install options (Claude Code plugin, OpenCode, MCP server, WSL) are in [docs/INSTALLATION.md](docs/INSTALLATION.md).
+
+### Windows (native, no WSL)
+
+Superpowers runs its hooks and helper scripts with bash. On Windows that bash is Git Bash (part of Git for Windows), the same shell Claude Code uses on Windows. Requires Windows PowerShell 5.1 or PowerShell 7 and winget. In PowerShell:
+
+```powershell
+git clone https://github.com/bordenet/superpowers-plus.git $HOME\superpowers-plus
+cd $HOME\superpowers-plus
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+`install.ps1`:
+
+1. Installs whatever is missing with winget: Git for Windows (`Git.Git`), Node.js LTS (`OpenJS.NodeJS.LTS`), Python 3 (`Python.Python.3.12`), and jq (`jqlang.jq`). No git yet? Download the repo ZIP from GitHub, extract it, and run `install.ps1` from the extracted `superpowers-plus-main` folder.
+2. Writes `python3` and `python3.cmd` shims to `~\.local\bin` (Python on Windows ships only `python.exe`) and puts `~\.local\bin` first on your user `PATH`.
+3. Sets the user environment variables `CLAUDE_CODE_GIT_BASH_PATH` (where Claude Code finds Git Bash) and `PYTHONUTF8=1`.
+4. Runs `install.sh` under Git Bash. You get the same install as on macOS and Linux: skills, Claude Code hooks, git commit and push gates, tools, rules, and templates.
+
+Open a new terminal afterwards so the `PATH` and environment changes take effect, then restart your AI tool.
+
+| Option | Effect |
+|--------|--------|
+| `-Categories engineering,writing` | Install only those top-level `skills/` folders |
+| `-SkipAugment` | Install to `~\.claude\skills` only. Skips `~\.codex\skills`, `~\.agents\skills` (also read by Codex), the Augment adapter, and Augment rules |
+| `-Force` | Overwrite a different superpowers ecosystem recorded in `~\.codex\.superpowers-ecosystem`. Without `-SkillsOnly`, passed to `install.sh --force`, which also runs `git reset --hard origin/main` and `git clean -fd` in `~\.codex\superpowers-plus` when that checkout is ahead of or has diverged from `origin/main`, discarding local commits and untracked files there |
+| `-Uninstall` | Run `uninstall.sh` under Git Bash and remove the `python3` shims. Installs nothing. Leaves the `~\.local\bin` PATH entry, `CLAUDE_CODE_GIT_BASH_PATH`, `PYTHONUTF8`, and winget packages in place |
+| `-NoPrereqInstall` | Don't run winget; stop if something is missing |
+| `-SkillsOnly` | Copy skills with PowerShell only; no Git Bash, winget, or other prerequisites |
+
+`-SkillsOnly` copies skills to `~\.codex\skills`, `~\.claude\skills`, and (for skills tagged `augment_menu: true`) `~\.agents\skills`, and installs the Augment adapter. It uses the same manifest as `install.sh`, so a re-run prunes skills deleted from the repo. It does not install hooks, git gates, tools, rules, templates, or the Claude Desktop ZIPs.
+
+If WSL is also installed, `bash` typed in PowerShell or CMD starts WSL, not Git Bash, because `C:\Windows\System32\bash.exe` comes first on the system `PATH`. To open Git Bash, use Git Bash from the Start menu or run `& $env:CLAUDE_CODE_GIT_BASH_PATH`. Claude Code is not affected because it uses `CLAUDE_CODE_GIT_BASH_PATH`. On macOS and Linux, `install.ps1` runs `bash install.sh` with the same options.
+
+### Codex
+
+Codex loads personal skills from `~/.agents/skills` ([Codex skills docs](https://developers.openai.com/codex/skills)). Both installers put the skills tagged `augment_menu: true` there.
+
+macOS, Linux, or WSL:
+
+```bash
+git clone https://github.com/bordenet/superpowers-plus.git ~/.codex/superpowers-plus
+cd ~/.codex/superpowers-plus
+bash install.sh
+```
+
+Windows PowerShell:
+
+```powershell
+git clone https://github.com/bordenet/superpowers-plus.git $HOME\.codex\superpowers-plus
+cd $HOME\.codex\superpowers-plus
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+Restart Codex, then run `/skills` or type `$` followed by a skill name (for example `$systematic-debugging`) to use one. Codex also picks skills on its own when a task matches a skill's description. To update, run `git pull` in the checkout and re-run the installer. To remove, run `bash install.sh --uninstall` or `powershell -ExecutionPolicy Bypass -File .\install.ps1 -Uninstall`.
+
+Git commit and push gates work with Codex because git runs them. Claude Code lifecycle hooks do not apply to Codex.
 
 ## Claude Desktop
 
@@ -116,7 +172,9 @@ All 125 skills: [docs/SKILLS.md](docs/SKILLS.md). How they connect: [docs/SKILL_
 |----------|---------|
 | **Claude Code** | Full: skills, lifecycle hooks, commit and push gates, approval guardrails |
 | **Augment Code** | Full: skills, routing, commit and push gates, MCP integrations |
-| **Codex, OpenCode** | Skills, via the [platform install guides](docs/INSTALLATION.md). Git gates work with any assistant because git runs them; Claude Code lifecycle hooks do not apply |
+| **Codex** | Skills, via the [Codex install steps](#codex). Git gates work with any assistant because git runs them; Claude Code lifecycle hooks do not apply |
+| **OpenCode** | Skills, via the [platform install guide](docs/INSTALLATION.md#opencode). Git gates apply; Claude Code lifecycle hooks do not |
+| **Windows** | Full install through [`install.ps1`](#windows-native-no-wsl), which runs `install.sh` under Git Bash. WSL also works |
 | **Gemini CLI** | No installer. `GEMINI.md` points Gemini at the repo's agent guidance |
 | **Claude Desktop** | Code tab: same as Claude Code. Chat and Cowork: eleven uploadable skills. Chat can also reach all skills through the MCP server. See [Claude Desktop](#claude-desktop) |
 | **Other MCP clients** | Skills exposed as `find_skills`, `use_skill`, and `match_skills` tools |

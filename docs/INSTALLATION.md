@@ -4,7 +4,7 @@ Return to the [README](../README.md).
 
 ## Install
 
-**Prerequisites:** bash 4+, git, Node.js 18+. npm is only required for the optional MCP server below.
+**Prerequisites:** bash 4+, git, Node.js 18+, Python 3. npm is only required for the optional MCP server below. On Windows, `install.ps1` installs these for you.
 
 > **macOS note:** macOS ships bash 3.2 (frozen at GPLv2 since 2007). Install modern bash first: `brew install bash`. The installer will detect the old version and tell you exactly how to fix it.
 
@@ -13,7 +13,9 @@ Return to the [README](../README.md).
 - **Most users:** core install below (`git clone` + `bash install.sh`)
 - **Augment Agent only:** one-liner bootstrap for Ubuntu / Debian / WSL
 - **Claude Code:** use `install.sh` for complete setup, or `/plugin install` for plugin-only mode
-- **Codex / OpenCode:** use the platform-specific instructions below
+- **Windows without WSL:** `install.ps1` (full install under Git Bash; see [Windows (native)](#windows-native))
+- **Codex:** see [Codex](#codex) below
+- **OpenCode:** use the platform-specific instructions below
 - **Claude Desktop:** the core install covers the Code tab and builds ZIPs to upload for the Chat and Cowork tabs; see [Claude Desktop](../README.md#claude-desktop)
 - **Another MCP client:** do the core install first, then add the optional MCP server
 
@@ -29,11 +31,45 @@ The installer:
 
 - Detects wrong shell (sh, zsh, dash) and tells you to use bash
 - Detects old bash (3.2) with platform-specific install instructions
-- Checks for missing commands (git, node) with remediation steps
+- Checks for missing commands (git, node, python3) with remediation steps
 - Auto-detects your platform and offers to install missing dependencies
 - Auto-fixes Windows CRLF line endings if detected
 
-**Windows/WSL:** Run `wsl --install -d Ubuntu` first, then use the commands above from within WSL. If you cloned superpowers-plus on Windows *before* running the installer, repair line endings with: `bash tools/harsh-review.sh --fix`
+**WSL:** Run the commands above from within WSL. If you cloned superpowers-plus on Windows *before* running the installer, repair line endings with: `bash tools/harsh-review.sh --fix`
+
+### Windows (native)
+
+On Windows, superpowers runs its bash hooks and scripts with Git Bash, the shell Claude Code also uses on Windows. No WSL is needed. Requires Windows PowerShell 5.1 or PowerShell 7 and winget.
+
+```powershell
+git clone https://github.com/bordenet/superpowers-plus.git $HOME\superpowers-plus
+cd $HOME\superpowers-plus
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+`install.ps1` does four things:
+
+1. Installs missing prerequisites with winget: `Git.Git` (Git Bash), `OpenJS.NodeJS.LTS`, `Python.Python.3.12`, `jqlang.jq`. With `-NoPrereqInstall` it stops instead.
+2. Writes `python3` (for Git Bash) and `python3.cmd` (for PowerShell and CMD) shims to `~\.local\bin` and puts that folder first on the user `PATH`. Python on Windows ships only `python.exe`, and the `python3` in `WindowsApps` opens the Microsoft Store.
+3. Sets user environment variables `CLAUDE_CODE_GIT_BASH_PATH` (Git Bash path, read by Claude Code) and `PYTHONUTF8=1` (Windows Python otherwise reads files in the ANSI code page).
+4. Runs `install.sh --yes` under Git Bash, which does the full install. `sp-*` commands are written as small wrapper scripts (usually to `~\.local\bin`), because Git Bash's `ln -s` makes copies.
+
+Open a new terminal afterwards so the changes take effect. If WSL is also installed, `bash` typed in PowerShell starts WSL, because `C:\Windows\System32\bash.exe` comes first on the system `PATH`. To open Git Bash, use Git Bash from the Start menu or run `& $env:CLAUDE_CODE_GIT_BASH_PATH`. Claude Code is not affected.
+
+Options: `-Categories <a,b>`, `-SkipAugment`, `-Force` (passed through as the matching `install.sh` flags), `-NoPrereqInstall`, `-SkillsOnly`, and `-Uninstall`. `-Force` (via `install.sh --force`) can run `git reset --hard origin/main` and `git clean -fd` in `~\.codex\superpowers-plus` if that checkout is ahead of or has diverged from `origin/main`. `-Uninstall` runs `uninstall.sh` under Git Bash and removes the `python3` shims; it installs nothing, and leaves the `~\.local\bin` PATH entry, `CLAUDE_CODE_GIT_BASH_PATH`, `PYTHONUTF8`, and winget packages in place. With `-SkillsOnly`, `-Categories` is not remembered between runs.
+
+`-SkillsOnly` deploys skills with PowerShell only, with no Git Bash or other prerequisites. It writes the same locations and manifest as `install.sh`:
+
+| Path | Contents |
+|------|----------|
+| `~\.codex\skills` | All skills plus `_shared` (Augment Agent) |
+| `~\.claude\skills` | All skills plus `_shared` (Claude Code) |
+| `~\.agents\skills` | Skills tagged `augment_menu: true`, as `SKILL.md` (Augment slash menu, Codex) |
+| `~\.codex\superpowers-augment` | `superpowers-augment.js` and `lib/` |
+| `~\.codex\superpowers-plus\install-state\skills.manifest` | Deployed skill names, used to prune removed skills on the next run |
+| `~\.codex\.superpowers-ecosystem` | Which superpowers ecosystem owns this install (checked on every install; `-Force` overrides) |
+
+With `-SkillsOnly`, lifecycle hooks, git gates, tools, rules, templates, and Claude Desktop ZIPs are not installed, and `-Uninstall` removes only what this table lists. On macOS and Linux, `install.ps1` runs `bash install.sh`.
 
 **Linux containers (Docker/CI):** Works as root without sudo. The installer detects the environment automatically.
 
@@ -59,9 +95,16 @@ When Claude Code lifecycle guardrails are enabled, the SessionStart hook bounds 
 
 ### Codex
 
-```text
-Fetch and follow instructions from https://raw.githubusercontent.com/bordenet/superpowers-plus/main/.codex/INSTALL.md
+Codex loads personal skills from `~/.agents/skills` ([Codex skills docs](https://developers.openai.com/codex/skills)). Both installers put the skills tagged `augment_menu: true` there.
+
+```bash
+git clone https://github.com/bordenet/superpowers-plus.git ~/.codex/superpowers-plus
+cd ~/.codex/superpowers-plus
+bash install.sh                                          # macOS / Linux / WSL
+powershell -ExecutionPolicy Bypass -File .\install.ps1   # Windows, from PowerShell
 ```
+
+Restart Codex, then run `/skills` or type `$` and a skill name (for example `$systematic-debugging`). Update with `git pull` and a re-run; remove with `bash install.sh --uninstall` or `powershell -ExecutionPolicy Bypass -File .\install.ps1 -Uninstall`.
 
 ### OpenCode
 
