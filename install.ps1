@@ -16,10 +16,13 @@
       4. Runs install.sh under Git Bash, which installs skills, Claude Code
          hooks, git gates, tools, rules, and templates as on macOS/Linux.
 
-    Prerequisites that need administrator rights (Git for Windows and Node.js
-    install machine-wide) are only installed from an elevated PowerShell; from a
-    non-elevated one the script stops with instructions instead of triggering a
-    UAC prompt.
+    The script refuses to run from an elevated (administrator) PowerShell: it
+    runs install.sh and other scripts from this checkout, which a non-admin can
+    modify. Git for Windows and Node.js install machine-wide, so when either is
+    missing the script stops and prints the winget command to run from an
+    elevated PowerShell; then re-run this script from a normal one.
+    SUPERPOWERS_ALLOW_ELEVATED=1 (exactly 1) lifts the refusal, for disposable
+    single-user machines such as CI runners.
 
     On macOS and Linux this script runs bash install.sh (or uninstall.sh with
     -Uninstall) with the matching flags.
@@ -116,10 +119,6 @@ function Update-SessionPath {
     $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
     $user = [Environment]::GetEnvironmentVariable('Path', 'User')
     $current = @($env:Path.Split(';') | Where-Object { $_ })
-    # Elevated runs execute tools found on PATH as administrator. The user PATH
-    # is user-writable and an elevated shell inherits it in $env:Path, so rebuild
-    # the session PATH from the machine PATH only.
-    if (Test-Elevated) { $user = ''; $current = @() }
     $merged = New-Object System.Collections.Generic.List[string]
     foreach ($p in $current + @("$machine;$user".Split(';'))) {
         if (-not $p) { continue }
@@ -161,52 +160,16 @@ $WingetAlreadyInstalled = @(-1978335189, -1978335135)
 
 # -MachineWide: the installer writes to Program Files and raises a UAC prompt
 # when not elevated; this repo's installers must not wait for a human, so stop.
-function Get-WingetPath {
-    if (-not (Test-Elevated)) {
-        $c = Get-Command winget.exe -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($c) { return $c.Source }
-        return $null
-    }
-    # Elevated: the user PATH (where the winget alias lives) is not trusted, so
-    # use the App Installer package, which sits in admin-owned Program Files.
-    # Pin the publisher (family name) and require the package to live under
-    # Program Files\WindowsApps, so a per-user loose-registered package of the
-    # same name cannot be selected.
-    $pkg = Get-AppxPackage -Name Microsoft.DesktopAppInstaller -ErrorAction SilentlyContinue |
-        Where-Object { $_.PackageFamilyName -eq 'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe' -and $env:ProgramFiles -and
-            "$($_.InstallLocation)".StartsWith((Join-Path $env:ProgramFiles 'WindowsApps') + '\', [StringComparison]::OrdinalIgnoreCase) } |
-        Select-Object -First 1
-    if ($pkg -and $pkg.InstallLocation) {
-        $w = Join-Path $pkg.InstallLocation 'winget.exe'
-        if (Test-Path -LiteralPath $w -PathType Leaf) { return $w }
-    }
-    return $null
-}
-
-# Elevated runs execute tools as administrator, so run one only from an
-# admin-owned location: Program Files, Program Files (x86) or SystemRoot.
-# Allow-list, not deny-list: anything else (user profile, ProgramData, C:\foo)
-# may be writable by a non-admin. Not elevated: no restriction.
-function Test-TrustedWhenElevated([string]$Exe) {
-    if (-not (Test-Elevated)) { return $true }
-    if (-not $Exe) { return $false }
-    foreach ($root in @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:SystemRoot)) {
-        if ($root -and $Exe.StartsWith($root.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) { return $true }
-    }
-    return $false
-}
-
 function Install-WingetPackage([string]$Id, [switch]$MachineWide) {
     if ($NoPrereqInstall) { Stop-Bootstrap "$Id is missing or too old and -NoPrereqInstall was given. Install it: winget install --id $Id -e" }
-    $winget = Get-WingetPath
-    if (-not $winget) {
+    if (-not (Get-Command winget.exe -ErrorAction SilentlyContinue)) {
         Stop-Bootstrap "$Id is missing or too old and winget is not available. Install it manually, then re-run."
     }
     if ($MachineWide -and -not (Test-Elevated)) {
-        Stop-Bootstrap "$Id installs machine-wide and needs administrator rights. Re-run from an elevated PowerShell, or install it first: winget install --id $Id -e"
+        Stop-Bootstrap "$Id is missing or too old and installs machine-wide. From an elevated PowerShell run: winget install --id $Id -e   Then re-run this script from a normal PowerShell."
     }
     Write-Host "Installing $Id with winget..."
-    & $winget install --id $Id -e --source winget --silent --accept-package-agreements --accept-source-agreements --disable-interactivity
+    winget install --id $Id -e --source winget --silent --accept-package-agreements --accept-source-agreements --disable-interactivity
     if ($WingetAlreadyInstalled -contains $LASTEXITCODE) {
         Write-Host "winget reports $Id is already installed (exit $LASTEXITCODE); re-checking."
     } elseif ($LASTEXITCODE -ne 0) {
@@ -219,18 +182,11 @@ function Find-GitBash {
     $roots = New-Object System.Collections.Generic.List[string]
     # The Git for Windows registry key is authoritative; a git.exe on PATH can
     # belong to MSYS2 or Cygwin, whose bash is not the one Claude Code expects.
-    # When elevated, only trust machine-wide locations: HKCU, PATH and
-    # %LOCALAPPDATA% are user-writable, so a planted bash.exe there would run
-    # as administrator.
-    $elevated = Test-Elevated
-    $keys = @('HKLM:\SOFTWARE\GitForWindows')
-    if (-not $elevated) { $keys += 'HKCU:\SOFTWARE\GitForWindows' }
-    foreach ($key in $keys) {
+    foreach ($key in @('HKLM:\SOFTWARE\GitForWindows', 'HKCU:\SOFTWARE\GitForWindows')) {
         $p = Get-ItemProperty -Path $key -Name InstallPath -ErrorAction SilentlyContinue
         if ($p) { $roots.Add($p.InstallPath) }
     }
-    $git = $null
-    if (-not $elevated) { $git = Get-Command git.exe -ErrorAction SilentlyContinue }
+    $git = Get-Command git.exe -ErrorAction SilentlyContinue
     if ($git) {
         # <root>\cmd\git.exe, <root>\bin\git.exe or <root>\mingw64\bin\git.exe
         $d = Split-Path -Parent $git.Source
@@ -238,7 +194,7 @@ function Find-GitBash {
         $roots.Add((Split-Path -Parent (Split-Path -Parent $d)))
     }
     if ($env:ProgramFiles) { $roots.Add((Join-Path $env:ProgramFiles 'Git')) }
-    if ($env:LOCALAPPDATA -and -not $elevated) { $roots.Add((Join-Path $env:LOCALAPPDATA 'Programs\Git')) }
+    if ($env:LOCALAPPDATA) { $roots.Add((Join-Path $env:LOCALAPPDATA 'Programs\Git')) }
     foreach ($r in $roots) {
         if (-not $r) { continue }
         $bash = Join-Path $r 'bin\bash.exe'
@@ -249,13 +205,13 @@ function Find-GitBash {
 
 # Minimum versions the installer documents: Python 3.8+, Node.js 18+.
 function Test-PythonExe([string]$Exe) {
-    $r = Invoke-NativeQuiet $Exe @('-I', '-c', 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)')
+    $r = Invoke-NativeQuiet $Exe @('-c', 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)')
     return ($r.Code -eq 0)
 }
 
 function Test-NodeOk {
     $node = Get-Command node.exe -ErrorAction SilentlyContinue | Select-Object -First 1
-    if (-not $node -or -not (Test-TrustedWhenElevated $node.Source)) { return $false }
+    if (-not $node) { return $false }
     $r = Invoke-NativeQuiet $node.Source @('--version')
     return ($r.Code -eq 0 -and $r.Output -match '^v(\d+)\.' -and [int]$Matches[1] -ge 18)
 }
@@ -263,19 +219,15 @@ function Test-NodeOk {
 # Real python.exe 3.8+, skipping the Microsoft Store stubs in WindowsApps.
 function Find-Python {
     $py = Get-Command py.exe -ErrorAction SilentlyContinue | Select-Object -First 1
-    # Not when elevated: py.exe launches an interpreter chosen from HKCU, py.ini
-    # and PY_PYTHON*, so that interpreter would run as administrator before any
-    # path check. The python.exe loop below is allow-listed first.
-    if ($py -and -not (Test-Elevated)) {
-        $r = Invoke-NativeQuiet $py.Source @('-3', '-I', '-c', 'import sys; print(sys.executable)')
+    if ($py) {
+        $r = Invoke-NativeQuiet $py.Source @('-3', '-c', 'import sys; print(sys.executable)')
         $exe = "$($r.Output -split "`n" | Select-Object -First 1)".Trim()
         if ($r.Code -eq 0 -and $exe -and (Test-Path -LiteralPath $exe -PathType Leaf) -and (Test-PythonExe $exe)) { return $exe }
     }
     foreach ($c in @(Get-Command python.exe -All -ErrorAction SilentlyContinue)) {
-        if (($c.Source -notmatch '\\WindowsApps\\') -and (Test-TrustedWhenElevated $c.Source) -and (Test-PythonExe $c.Source)) { return $c.Source }
+        if (($c.Source -notmatch '\\WindowsApps\\') -and (Test-PythonExe $c.Source)) { return $c.Source }
     }
-    # %LOCALAPPDATA% is user-writable; do not run a Python from it as administrator.
-    if ($env:LOCALAPPDATA -and -not (Test-Elevated)) {
+    if ($env:LOCALAPPDATA) {
         $found = Get-ChildItem -Path (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python3*\python.exe') -ErrorAction SilentlyContinue |
             Sort-Object FullName -Descending | Where-Object { Test-PythonExe $_.FullName } | Select-Object -First 1
         if ($found) { return $found.FullName }
@@ -389,17 +341,17 @@ function Assert-Python3InGitBash([string]$GitBash) {
     }
 }
 
+# install.sh, uninstall.sh and the scripts they call live in this checkout,
+# which a non-admin can modify; running them as administrator would hand that
+# user admin rights.
+if ((Test-Elevated) -and $env:SUPERPOWERS_ALLOW_ELEVATED -ne '1') {
+    Stop-Bootstrap 'install.ps1 does not run from an elevated (administrator) PowerShell. Re-run it from a normal PowerShell. To install a missing Git for Windows or Node.js first, run from an elevated PowerShell: winget install --id Git.Git -e   and   winget install --id OpenJS.NodeJS.LTS -e'
+}
+
 $binDir = Join-Path $HOME '.local\bin'
 # Git Bash derives HOME from HOMEDRIVE/HOMEPATH, which can point at a
 # network share; the AI tools read skills from USERPROFILE.
 if (-not $env:HOME) { $env:HOME = $env:USERPROFILE }
-# Elevated: HKCU-defined variables are inherited and can inject code into the
-# bash, node and python started below (BASH_ENV, NODE_OPTIONS, PYTHON*).
-if (Test-Elevated) {
-    foreach ($v in @('BASH_ENV', 'ENV', 'NODE_OPTIONS', 'PYTHONSTARTUP', 'PYTHONPATH', 'PYTHONHOME', 'PYTHONUSERBASE')) {
-        Remove-Item -Path "Env:$v" -ErrorAction SilentlyContinue
-    }
-}
 Update-SessionPath
 $bashArgs = New-Object System.Collections.Generic.List[string]
 if ($Uninstall) {

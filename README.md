@@ -60,7 +60,7 @@ Open a new terminal afterwards so the `PATH` and environment changes take effect
 | `-Uninstall` | Run `uninstall.sh` under Git Bash and remove the `python3` shims and `sp-*` wrappers in `~\.local\bin`. Installs nothing. Leaves the `~\.local\bin` PATH entry, `CLAUDE_CODE_GIT_BASH_PATH`, `PYTHONUTF8`, and winget packages in place |
 | `-NoPrereqInstall` | Don't run winget; stop if something is missing |
 
-Git for Windows and Node.js install machine-wide, so `install.ps1` installs them only from an elevated PowerShell; from a normal one it stops with instructions rather than raising a UAC prompt. Existing `CLAUDE_CODE_GIT_BASH_PATH` and `PYTHONUTF8` values are kept (with a warning) unless unset or pointing at a path that no longer exists. Python must be 3.8+ and Node.js 18+.
+Run `install.ps1` from a normal PowerShell; it refuses to run elevated, because it executes scripts from a checkout a non-admin can modify. Git for Windows and Node.js install machine-wide, so if either is missing the script stops and prints the `winget install` command to run from an elevated PowerShell first. Existing `CLAUDE_CODE_GIT_BASH_PATH` and `PYTHONUTF8` values are kept (with a warning) unless unset or pointing at a path that no longer exists. Python must be 3.8+ and Node.js 18+.
 
 Earlier versions of `install.ps1` were a WSL wrapper. It now installs natively into your Windows profile.
 

@@ -194,10 +194,30 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: read
+    # Runner shells are elevated; the runner is disposable and single-user.
+    env:
+      SUPERPOWERS_ALLOW_ELEVATED: '1'
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+
+      - name: install.ps1 refuses an elevated shell without the override
+        shell: powershell
+        run: |
+          $id = [Security.Principal.WindowsIdentity]::GetCurrent()
+          if (-not (New-Object Security.Principal.WindowsPrincipal $id).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'runner shell is not elevated; this check would prove nothing' }
+          $env:SUPERPOWERS_ALLOW_ELEVATED = $null
+          # Redirected native stderr throws under the runner's default 'stop'.
+          $ErrorActionPreference = 'Continue'
+          $err = & powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -NoPrereqInstall 2>&1 | Out-String
+          $rc = $LASTEXITCODE
+          $ErrorActionPreference = 'Stop'
+          if ($rc -eq 0) { throw 'install.ps1 ran elevated without SUPERPOWERS_ALLOW_ELEVATED=1' }
+          if ($err -notmatch 'elevated') { throw "install.ps1 failed for another reason: $err" }
+          if (Test-Path "$HOME\.local\bin\python3") { throw 'install.ps1 wrote the python3 shim before refusing' }
+          # The runner appends 'exit $LASTEXITCODE', which is the refusal's 1.
+          exit 0
 
       - name: Configure git identity
         shell: bash
