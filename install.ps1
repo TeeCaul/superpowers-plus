@@ -183,13 +183,17 @@ function Get-WingetPath {
     return $null
 }
 
-# Elevated runs must not execute interpreters from user-writable locations.
+# Elevated runs execute tools as administrator, so run one only from an
+# admin-owned location: Program Files, Program Files (x86) or SystemRoot.
+# Allow-list, not deny-list: anything else (user profile, ProgramData, C:\foo)
+# may be writable by a non-admin. Not elevated: no restriction.
 function Test-TrustedWhenElevated([string]$Exe) {
     if (-not (Test-Elevated)) { return $true }
-    foreach ($bad in @($env:LOCALAPPDATA, $env:USERPROFILE, $env:APPDATA, $env:TEMP)) {
-        if ($bad -and $Exe.StartsWith($bad.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) { return $false }
+    if (-not $Exe) { return $false }
+    foreach ($root in @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:SystemRoot)) {
+        if ($root -and $Exe.StartsWith($root.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) { return $true }
     }
-    return $true
+    return $false
 }
 
 function Install-WingetPackage([string]$Id, [switch]$MachineWide) {
@@ -251,7 +255,7 @@ function Test-PythonExe([string]$Exe) {
 
 function Test-NodeOk {
     $node = Get-Command node.exe -ErrorAction SilentlyContinue | Select-Object -First 1
-    if (-not $node) { return $false }
+    if (-not $node -or -not (Test-TrustedWhenElevated $node.Source)) { return $false }
     $r = Invoke-NativeQuiet $node.Source @('--version')
     return ($r.Code -eq 0 -and $r.Output -match '^v(\d+)\.' -and [int]$Matches[1] -ge 18)
 }
