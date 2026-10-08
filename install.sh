@@ -85,7 +85,8 @@ if [[ -n "$_missing_cmds" ]]; then
     elif [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
         echo "║  Windows fix (PowerShell, from the repo root):                 ║" >&2
         echo "║    powershell -ExecutionPolicy Bypass -File .\\install.ps1      ║" >&2
-        echo "║  It installs git, node, python via winget and a python3 shim.  ║" >&2
+        printf '║  %-62s║\n' "It installs python and jq via winget. If git or node is" \
+            "missing, it prints the winget command to run elevated." >&2
     else
         echo "║  Linux fix:                                                    ║" >&2
         [[ "$_missing_cmds" == *git* ]]     && echo "║    sudo apt install git         (or yum/dnf/apk)                 ║" >&2
