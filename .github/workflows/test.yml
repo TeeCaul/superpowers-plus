@@ -258,8 +258,14 @@ jobs:
           # would actually delete the untracked sentinel.
           managed="$(dirname "$sentinel")"
           mkdir -p "$managed"
-          git -C "$managed" init -q
-          git -C "$managed" commit -q --allow-empty -m init
+          # It needs a reachable origin/main with the local HEAD ahead of it,
+          # otherwise the sync stops at "could not fetch" before any reset.
+          git init -q --bare "$HOME/ci-origin.git"
+          git -C "$managed" init -q -b main
+          git -C "$managed" commit -q --allow-empty -m base
+          git -C "$managed" remote add origin "$HOME/ci-origin.git"
+          git -C "$managed" push -q origin main
+          git -C "$managed" commit -q --allow-empty -m local-ahead
           touch "$sentinel"
           if powershell -NoProfile -ExecutionPolicy Bypass -File ./install.ps1 -NoPrereqInstall; then
             echo "install.ps1 should refuse a foreign ecosystem without -Force"; exit 1

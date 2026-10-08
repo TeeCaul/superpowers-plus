@@ -115,6 +115,9 @@ function Stop-Bootstrap([string]$Message) {
 function Update-SessionPath {
     $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
     $user = [Environment]::GetEnvironmentVariable('Path', 'User')
+    # Elevated runs execute tools found on PATH as administrator; the user PATH
+    # is user-writable, so leave it out.
+    if (Test-Elevated) { $user = '' }
     $current = @($env:Path.Split(';') | Where-Object { $_ })
     $merged = New-Object System.Collections.Generic.List[string]
     foreach ($p in $current + @("$machine;$user".Split(';'))) {
