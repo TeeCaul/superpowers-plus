@@ -1112,7 +1112,7 @@ export_augment_menu_skills() {
 import sys, re
 path = sys.argv[1]; new_name = sys.argv[2]
 with open(path, 'r', encoding='utf-8', newline='') as f: content = f.read()
-content = re.sub(r'^name: .*', 'name: ' + new_name, content, count=1, flags=re.MULTILINE)
+content = re.sub(r'^name: [^\r\n]*', 'name: ' + new_name, content, count=1, flags=re.MULTILINE)
 with open(path, 'w', encoding='utf-8', newline='') as f: f.write(content)
 " "$dest/SKILL.md" "$dest_name" || log_warn "Failed to update name: field in $dest/SKILL.md"
         fi

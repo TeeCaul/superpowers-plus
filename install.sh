@@ -817,7 +817,8 @@ main() {
     # Guard: refuse to overwrite a foreign superpowers ecosystem deployment.
     # check_foreign_ecosystem is defined in lib/install/deploy.sh (sourced above).
     # It reads ~/.codex/.superpowers-ecosystem and exits 1 if a different
-    # ecosystem already owns this machine, unless --force was passed.
+    # ecosystem already owns this machine, unless --force was passed or
+    # SUPERPOWERS_ALLOW_FOREIGN_ECOSYSTEM=1 is set.
     check_foreign_ecosystem
 
     # Handle --upgrade mode (explicit upgrade of existing installation)

@@ -166,7 +166,7 @@ function Install-WingetPackage([string]$Id, [switch]$MachineWide) {
         Stop-Bootstrap "$Id installs machine-wide and needs administrator rights. Re-run from an elevated PowerShell, or install it first: winget install --id $Id -e"
     }
     Write-Host "Installing $Id with winget..."
-    & winget.exe install --id $Id -e --silent --accept-package-agreements --accept-source-agreements --disable-interactivity
+    & winget.exe install --id $Id -e --source winget --silent --accept-package-agreements --accept-source-agreements --disable-interactivity
     if ($WingetAlreadyInstalled -contains $LASTEXITCODE) {
         Write-Host "winget reports $Id is already installed (exit $LASTEXITCODE); re-checking."
     } elseif ($LASTEXITCODE -ne 0) {
@@ -179,11 +179,18 @@ function Find-GitBash {
     $roots = New-Object System.Collections.Generic.List[string]
     # The Git for Windows registry key is authoritative; a git.exe on PATH can
     # belong to MSYS2 or Cygwin, whose bash is not the one Claude Code expects.
-    foreach ($key in @('HKLM:\SOFTWARE\GitForWindows', 'HKCU:\SOFTWARE\GitForWindows')) {
+    # When elevated, only trust machine-wide locations: HKCU, PATH and
+    # %LOCALAPPDATA% are user-writable, so a planted bash.exe there would run
+    # as administrator.
+    $elevated = Test-Elevated
+    $keys = @('HKLM:\SOFTWARE\GitForWindows')
+    if (-not $elevated) { $keys += 'HKCU:\SOFTWARE\GitForWindows' }
+    foreach ($key in $keys) {
         $p = Get-ItemProperty -Path $key -Name InstallPath -ErrorAction SilentlyContinue
         if ($p) { $roots.Add($p.InstallPath) }
     }
-    $git = Get-Command git.exe -ErrorAction SilentlyContinue
+    $git = $null
+    if (-not $elevated) { $git = Get-Command git.exe -ErrorAction SilentlyContinue }
     if ($git) {
         # <root>\cmd\git.exe, <root>\bin\git.exe or <root>\mingw64\bin\git.exe
         $d = Split-Path -Parent $git.Source
@@ -191,7 +198,7 @@ function Find-GitBash {
         $roots.Add((Split-Path -Parent (Split-Path -Parent $d)))
     }
     if ($env:ProgramFiles) { $roots.Add((Join-Path $env:ProgramFiles 'Git')) }
-    if ($env:LOCALAPPDATA) { $roots.Add((Join-Path $env:LOCALAPPDATA 'Programs\Git')) }
+    if ($env:LOCALAPPDATA -and -not $elevated) { $roots.Add((Join-Path $env:LOCALAPPDATA 'Programs\Git')) }
     foreach ($r in $roots) {
         if (-not $r) { continue }
         $bash = Join-Path $r 'bin\bash.exe'
@@ -287,7 +294,7 @@ function Install-Python3Shim([string]$PythonExe, [string]$BinDir) {
     $quoted = (ConvertTo-MsysPath $PythonExe).Replace("'", "'\''")
     $shims = @{
         'python3'     = "#!/usr/bin/env bash`n# $ShimMarker`nexec '$quoted' `"`$@`"`n"
-        'python3.cmd' = "@rem $ShimMarker`r`n@`"$PythonExe`" %*`r`n"
+        'python3.cmd' = "@rem $ShimMarker`r`n@`"$($PythonExe.Replace('%', '%%'))`" %*`r`n"
     }
     [void][IO.Directory]::CreateDirectory($BinDir)
     foreach ($name in $shims.Keys) {
