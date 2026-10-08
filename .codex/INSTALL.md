@@ -26,7 +26,7 @@ The installer automatically:
 - Sets up the bootstrap script and agent configuration
 - Auto-fixes CRLF line endings on Windows/WSL
 
-> **Windows (no WSL):** In PowerShell run `git clone https://github.com/bordenet/superpowers-plus.git $HOME\.codex\superpowers-plus`, `cd $HOME\.codex\superpowers-plus`, then `powershell -ExecutionPolicy Bypass -File .\install.ps1`. It installs prerequisites with winget (including Git Bash) and runs `install.sh` under Git Bash.
+> **Windows (no WSL):** In PowerShell run `git clone https://github.com/bordenet/superpowers-plus.git $HOME\.codex\superpowers-plus`, `cd $HOME\.codex\superpowers-plus`, then `powershell -ExecutionPolicy Bypass -File .\install.ps1`. Run it from a normal (not elevated) PowerShell; it refuses to run elevated. It installs missing Python and jq with winget and runs `install.sh` under Git Bash. If Git for Windows or Node.js is missing, it stops and prints the `winget install` command to run from an elevated PowerShell first.
 
 ## Verify Installation
 

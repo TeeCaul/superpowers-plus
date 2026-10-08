@@ -45,7 +45,7 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 
 `install.ps1`:
 
-1. Installs whatever is missing with winget: Git for Windows (`Git.Git`), Node.js LTS (`OpenJS.NodeJS.LTS`), Python 3 (`Python.Python.3.12`), and jq (`jqlang.jq`). No git yet? Download the repo ZIP from GitHub, extract it, and run `install.ps1` from the extracted `superpowers-plus-main` folder.
+1. Installs missing Python 3 (`Python.Python.3.12`) and jq (`jqlang.jq`) with winget. If Git for Windows (`Git.Git`) or Node.js LTS (`OpenJS.NodeJS.LTS`) is missing, it stops and prints the `winget install` command to run from an elevated PowerShell. No git yet? Install it that way, or download the repo ZIP from GitHub, extract it, and run `install.ps1` from the extracted `superpowers-plus-main` folder once Git and Node.js are installed.
 2. Writes `python3` and `python3.cmd` shims to `~\.local\bin` (Python on Windows ships only `python.exe`) and puts `~\.local\bin` first on your user `PATH`.
 3. Sets the user environment variables `CLAUDE_CODE_GIT_BASH_PATH` (where Claude Code finds Git Bash) and `PYTHONUTF8=1`.
 4. Runs `install.sh` under Git Bash. You get the same install as on macOS and Linux: skills, Claude Code hooks, git commit and push gates, tools, rules, and templates.

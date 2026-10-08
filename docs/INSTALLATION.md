@@ -48,7 +48,7 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 
 `install.ps1` does four things:
 
-1. Installs missing prerequisites with winget: `Git.Git` (Git Bash), `OpenJS.NodeJS.LTS`, `Python.Python.3.12`, `jqlang.jq`. With `-NoPrereqInstall` it stops instead.
+1. Installs missing `Python.Python.3.12` and `jqlang.jq` with winget. If `Git.Git` (Git Bash) or `OpenJS.NodeJS.LTS` is missing, it stops and prints the `winget install` command to run elevated (see below). With `-NoPrereqInstall` it stops for any missing prerequisite.
 2. Writes `python3` (for Git Bash) and `python3.cmd` (for PowerShell and CMD) shims to `~\.local\bin` and puts that folder first on the user `PATH`. Python on Windows ships only `python.exe`, and the `python3` in `WindowsApps` opens the Microsoft Store.
 3. Sets user environment variables `CLAUDE_CODE_GIT_BASH_PATH` (Git Bash path, read by Claude Code) and `PYTHONUTF8=1` (Windows Python otherwise reads files in the ANSI code page).
 4. Runs `install.sh --yes` under Git Bash, which does the full install. `sp-*` commands are written as small wrapper scripts (usually to `~\.local\bin`), because Git Bash's `ln -s` makes copies.

@@ -5,9 +5,10 @@
 .DESCRIPTION
     On Windows the default run is a full install:
 
-      1. Installs missing prerequisites with winget: Git for Windows
-         (Git.Git, provides Git Bash), Node.js LTS (OpenJS.NodeJS.LTS),
-         Python 3 (Python.Python.3.12), and jq (jqlang.jq).
+      1. Installs missing Python 3 (Python.Python.3.12) and jq (jqlang.jq)
+         with winget. Git for Windows (Git.Git, provides Git Bash) and
+         Node.js LTS (OpenJS.NodeJS.LTS) install machine-wide; if either is
+         missing the script stops and prints the winget command (see below).
       2. Writes python3 and python3.cmd shims to ~/.local/bin (Python on
          Windows ships python.exe only) and prepends ~/.local/bin to the
          user PATH.

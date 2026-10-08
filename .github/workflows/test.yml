@@ -214,7 +214,7 @@ jobs:
           $rc = $LASTEXITCODE
           $ErrorActionPreference = 'Stop'
           if ($rc -eq 0) { throw 'install.ps1 ran elevated without SUPERPOWERS_ALLOW_ELEVATED=1' }
-          if ($err -notmatch 'elevated') { throw "install.ps1 failed for another reason: $err" }
+          if ($err -notmatch 'does not run from an elevated') { throw "install.ps1 failed for another reason: $err" }
           if (Test-Path "$HOME\.local\bin\python3") { throw 'install.ps1 wrote the python3 shim before refusing' }
           # The runner appends 'exit $LASTEXITCODE', which is the refusal's 1.
           exit 0
@@ -261,7 +261,7 @@ jobs:
         run: |
           powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -NoPrereqInstall
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $parts = [Environment]::GetEnvironmentVariable('Path','User') -split ';' | Where-Object { $_ }
+          $parts = @([Environment]::GetEnvironmentVariable('Path','User') -split ';' | Where-Object { $_ })
           $n = @($parts | Where-Object { [Environment]::ExpandEnvironmentVariables($_).TrimEnd('\') -ieq "$HOME\.local\bin" }).Count
           if ($n -ne 1) { throw "~\.local\bin appears $n times on the user PATH after a second run" }
           if ([Environment]::ExpandEnvironmentVariables($parts[0]).TrimEnd('\') -ine "$HOME\.local\bin") { throw "~\.local\bin is not first on the user PATH ($($parts[0]) is)" }
