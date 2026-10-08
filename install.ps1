@@ -161,16 +161,42 @@ $WingetAlreadyInstalled = @(-1978335189, -1978335135)
 
 # -MachineWide: the installer writes to Program Files and raises a UAC prompt
 # when not elevated; this repo's installers must not wait for a human, so stop.
+function Get-WingetPath {
+    if (-not (Test-Elevated)) {
+        $c = Get-Command winget.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($c) { return $c.Source }
+        return $null
+    }
+    # Elevated: the user PATH (where the winget alias lives) is not trusted, so
+    # use the App Installer package, which sits in admin-owned Program Files.
+    $pkg = Get-AppxPackage -Name Microsoft.DesktopAppInstaller -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($pkg -and $pkg.InstallLocation) {
+        $w = Join-Path $pkg.InstallLocation 'winget.exe'
+        if (Test-Path -LiteralPath $w -PathType Leaf) { return $w }
+    }
+    return $null
+}
+
+# Elevated runs must not execute interpreters from user-writable locations.
+function Test-TrustedWhenElevated([string]$Exe) {
+    if (-not (Test-Elevated)) { return $true }
+    foreach ($bad in @($env:LOCALAPPDATA, $env:USERPROFILE, $env:APPDATA, $env:TEMP)) {
+        if ($bad -and $Exe.StartsWith($bad.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) { return $false }
+    }
+    return $true
+}
+
 function Install-WingetPackage([string]$Id, [switch]$MachineWide) {
     if ($NoPrereqInstall) { Stop-Bootstrap "$Id is missing or too old and -NoPrereqInstall was given. Install it: winget install --id $Id -e" }
-    if (-not (Get-Command winget.exe -ErrorAction SilentlyContinue)) {
+    $winget = Get-WingetPath
+    if (-not $winget) {
         Stop-Bootstrap "$Id is missing or too old and winget is not available. Install it manually, then re-run."
     }
     if ($MachineWide -and -not (Test-Elevated)) {
         Stop-Bootstrap "$Id installs machine-wide and needs administrator rights. Re-run from an elevated PowerShell, or install it first: winget install --id $Id -e"
     }
     Write-Host "Installing $Id with winget..."
-    & winget.exe install --id $Id -e --source winget --silent --accept-package-agreements --accept-source-agreements --disable-interactivity
+    & $winget install --id $Id -e --source winget --silent --accept-package-agreements --accept-source-agreements --disable-interactivity
     if ($WingetAlreadyInstalled -contains $LASTEXITCODE) {
         Write-Host "winget reports $Id is already installed (exit $LASTEXITCODE); re-checking."
     } elseif ($LASTEXITCODE -ne 0) {
@@ -226,13 +252,15 @@ function Test-NodeOk {
 
 # Real python.exe 3.8+, skipping the Microsoft Store stubs in WindowsApps.
 function Find-Python {
-    if (Get-Command py.exe -ErrorAction SilentlyContinue) {
-        $r = Invoke-NativeQuiet 'py.exe' @('-3', '-c', 'import sys; print(sys.executable)')
-        $exe = ($r.Output -split "`n" | Select-Object -First 1)
-        if ($r.Code -eq 0 -and $exe -and (Test-Path -LiteralPath "$exe".Trim() -PathType Leaf) -and (Test-PythonExe "$exe".Trim())) { return "$exe".Trim() }
+    $py = Get-Command py.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($py -and (Test-TrustedWhenElevated $py.Source)) {
+        $r = Invoke-NativeQuiet $py.Source @('-3', '-c', 'import sys; print(sys.executable)')
+        $exe = "$($r.Output -split "`n" | Select-Object -First 1)".Trim()
+        # py.exe also lists per-user installs, so re-check the path it returns.
+        if ($r.Code -eq 0 -and $exe -and (Test-TrustedWhenElevated $exe) -and (Test-Path -LiteralPath $exe -PathType Leaf) -and (Test-PythonExe $exe)) { return $exe }
     }
     foreach ($c in @(Get-Command python.exe -All -ErrorAction SilentlyContinue)) {
-        if (($c.Source -notmatch '\\WindowsApps\\') -and (Test-PythonExe $c.Source)) { return $c.Source }
+        if (($c.Source -notmatch '\\WindowsApps\\') -and (Test-TrustedWhenElevated $c.Source) -and (Test-PythonExe $c.Source)) { return $c.Source }
     }
     # %LOCALAPPDATA% is user-writable; do not run a Python from it as administrator.
     if ($env:LOCALAPPDATA -and -not (Test-Elevated)) {
