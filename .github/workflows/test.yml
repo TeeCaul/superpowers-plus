@@ -218,6 +218,15 @@ jobs:
           "$HOME/.local/bin/python3" -c 'import sys; assert sys.version_info >= (3, 8)'
           [ "$(powershell -NoProfile -Command "[Environment]::GetEnvironmentVariable('PYTHONUTF8','User')" | tr -d '\r')" = "1" ]
           [ -n "$(powershell -NoProfile -Command "[Environment]::GetEnvironmentVariable('CLAUDE_CODE_GIT_BASH_PATH','User')" | tr -d '\r')" ]
+          # sp-* commands are wrappers on Windows (ln -s copies there): each must
+          # carry the marker and exec its script with a single-quoted path.
+          shopt -s nullglob
+          wrappers=("$HOME"/.local/bin/sp-*)
+          [ "${#wrappers[@]}" -gt 0 ]
+          for w in "${wrappers[@]}"; do
+            grep -qF '# superpowers-plus sp-* wrapper' "$w"
+            grep -q "^exec bash '.*/\.codex/superpowers-plus/" "$w"
+          done
 
       - name: python3.cmd shim (PowerShell)
         shell: powershell
@@ -225,9 +234,32 @@ jobs:
           & "$HOME\.local\bin\python3.cmd" -c 'import sys; assert sys.version_info >= (3, 8)'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: install.ps1 -SkillsOnly (native fallback)
+      - name: install.ps1 again (idempotent)
         shell: powershell
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -SkillsOnly
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -NoPrereqInstall
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $parts = [Environment]::GetEnvironmentVariable('Path','User') -split ';' | Where-Object { $_ }
+          $n = @($parts | Where-Object { [Environment]::ExpandEnvironmentVariables($_).TrimEnd('\') -ieq "$HOME\.local\bin" }).Count
+          if ($n -ne 1) { throw "~\.local\bin appears $n times on the user PATH after a second run" }
+          if ([Environment]::ExpandEnvironmentVariables($parts[0]).TrimEnd('\') -ine "$HOME\.local\bin") { throw "~\.local\bin is not first on the user PATH ($($parts[0]) is)" }
+          if (@(Get-ChildItem "$HOME\.local\bin\sp-*").Count -eq 0) { throw 'sp-* wrappers missing after a second run' }
+
+      - name: -Force bypasses the ecosystem lock only
+        shell: bash
+        run: |
+          set -euo pipefail
+          lock="$HOME/.codex/.superpowers-ecosystem"
+          echo other-ecosystem > "$lock"
+          sentinel="$HOME/.codex/superpowers-plus/ci-untracked-sentinel"
+          [ -d "$(dirname "$sentinel")" ] && touch "$sentinel"
+          if powershell -NoProfile -ExecutionPolicy Bypass -File ./install.ps1 -NoPrereqInstall; then
+            echo "install.ps1 should refuse a foreign ecosystem without -Force"; exit 1
+          fi
+          powershell -NoProfile -ExecutionPolicy Bypass -File ./install.ps1 -NoPrereqInstall -Force
+          [ "$(head -n1 "$lock" | tr -d '\r')" = "superpowers-plus" ]
+          # -Force must not run git clean -fd in the managed checkout.
+          if [ -d "$(dirname "$sentinel")" ]; then test -e "$sentinel"; fi
 
       # Advisory until the suite is ported to Git Bash; failures are reported, not blocking.
       - name: Bats under Git Bash (advisory)
@@ -245,6 +277,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (Test-Path "$HOME\.local\bin\python3") { throw 'python3 shim not removed' }
           if (Test-Path "$HOME\.local\bin\python3.cmd") { throw 'python3.cmd shim not removed' }
+          if (@(Get-ChildItem "$HOME\.local\bin\sp-*" -ErrorAction SilentlyContinue).Count -ne 0) { throw 'sp-* wrappers not removed' }
 
   security-scan:
     name: Security Scan

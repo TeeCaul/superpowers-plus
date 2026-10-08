@@ -12,7 +12,8 @@
 #        --force         Overwrite existing skills without prompting
 #        --upgrade       Pull latest changes before installing
 #        --version       Show version number
-# PLATFORM: macOS (Intel/Apple Silicon), Linux (Debian/Ubuntu, RHEL/Fedora, Arch), WSL
+# PLATFORM: macOS (Intel/Apple Silicon), Linux (Debian/Ubuntu, RHEL/Fedora, Arch), WSL,
+#           Windows via Git Bash (bootstrapped by install.ps1)
 # VERSION: 5.3.0
 # ARCHITECTURE: This file is a thin orchestrator. Implementation lives in
 #               lib/install/*.sh modules, sourced in dependency order below.

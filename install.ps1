@@ -16,28 +16,16 @@
       4. Runs install.sh under Git Bash, which installs skills, Claude Code
          hooks, git gates, tools, rules, and templates as on macOS/Linux.
 
-    With -SkillsOnly, no prerequisites are needed and only skills are
-    deployed, with PowerShell, following install_skills() in
-    lib/install/deploy.sh:
+    Prerequisites that need administrator rights (Git for Windows and Node.js
+    install machine-wide) are only installed from an elevated PowerShell; from a
+    non-elevated one the script stops with instructions instead of triggering a
+    UAC prompt.
 
-      ~/.codex/skills    Augment Agent (superpowers-augment.js)
-      ~/.claude/skills   Claude Code
-      ~/.agents/skills   Augment IDE slash menu and Codex (skills with
-                         augment_menu: true, manifest renamed to SKILL.md)
+    On macOS and Linux this script runs bash install.sh (or uninstall.sh with
+    -Uninstall) with the matching flags.
 
-    Each skill is deployed under its first /sp* trigger (for example sp-debug),
-    or under its folder name when it declares none. skills/_shared/ is copied
-    to ~/.codex/skills and ~/.claude/skills. The Augment adapter
-    (superpowers-augment.js and lib/) is copied to ~/.codex/superpowers-augment.
-    Deployed names are recorded in
-    ~/.codex/superpowers-plus/install-state/skills.manifest, the manifest
-    install.sh and uninstall.sh use, so a skill removed from the repo is pruned
-    on the next run.
-
-    -SkillsOnly skips Claude Code lifecycle hooks, git commit and push gates,
-    tools, rules, templates, and Claude Desktop ZIPs.
-
-    On macOS and Linux this script runs bash install.sh with the matching flags.
+    Behavior change: earlier versions of this script were a WSL wrapper. It now
+    installs natively into the Windows user profile.
 
     Exit codes: 0 success, 1 error (message on stderr).
 
@@ -51,31 +39,23 @@
 
 .PARAMETER Force
     Install even if ~/.codex/.superpowers-ecosystem names a different
-    superpowers ecosystem. The existing deployment is overwritten. Without
-    -SkillsOnly this is passed to install.sh as --force, which also runs
-    git reset --hard origin/main and git clean -fd in
-    ~/.codex/superpowers-plus when that checkout is ahead of or has diverged
-    from origin/main.
+    superpowers ecosystem. The existing deployment is overwritten. This only
+    bypasses the ecosystem lock (SUPERPOWERS_ALLOW_FOREIGN_ECOSYSTEM=1 for
+    install.sh); it does not pass --force, so local commits and untracked files
+    in ~/.codex/superpowers-plus are left alone. To also reset that checkout to
+    origin/main, run install.sh --force yourself.
 
 .PARAMETER Uninstall
-    Run uninstall.sh under Git Bash and remove the python3 shims. Installs
-    nothing; Git Bash must already be present. The ~/.local/bin PATH entry,
-    CLAUDE_CODE_GIT_BASH_PATH, PYTHONUTF8, and winget packages are left in
-    place. With -SkillsOnly, remove the skills listed in the manifest,
-    _shared/, and the ~/.agents/skills entries tagged source: superpowers-plus.
-
-.PARAMETER SkillsOnly
-    Windows only. Deploy skills with PowerShell; do not use Git Bash or
-    install prerequisites.
+    Run uninstall.sh under Git Bash, then remove the python3 shims and the sp-*
+    wrappers in ~/.local/bin. Installs nothing; Git Bash must already be
+    present. The ~/.local/bin PATH entry, CLAUDE_CODE_GIT_BASH_PATH,
+    PYTHONUTF8, and winget packages are left in place.
 
 .PARAMETER NoPrereqInstall
     Windows only. Do not run winget; fail if a prerequisite is missing.
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\install.ps1
-
-.EXAMPLE
-    powershell -ExecutionPolicy Bypass -File .\install.ps1 -SkillsOnly
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\install.ps1 -Categories engineering,writing
@@ -89,7 +69,6 @@ param(
     [switch]$SkipAugment,
     [switch]$Force,
     [switch]$Uninstall,
-    [switch]$SkillsOnly,
     [switch]$NoPrereqInstall
 )
 
@@ -106,12 +85,20 @@ $OnWindows = ($PSVersionTable.PSVersion.Major -lt 6) -or $IsWindows
 # --- macOS / Linux: delegate to install.sh ---------------------------------
 
 if (-not $OnWindows) {
+    if ($NoPrereqInstall) { Write-Warning '-NoPrereqInstall applies to Windows only; ignored.' }
     $bashArgs = New-Object System.Collections.Generic.List[string]
-    $bashArgs.Add((Join-Path $RepoRoot 'install.sh'))
-    if ($Uninstall) { $bashArgs.Add('--uninstall') }
-    if ($Force) { $bashArgs.Add('--force') }
-    if ($SkipAugment) { $bashArgs.Add('--skip-augment') }
-    if ($CategoryList) { $bashArgs.Add('--categories'); $bashArgs.Add($CategoryList) }
+    if ($Uninstall) {
+        # install.sh has no --uninstall; uninstall.sh takes only --yes/--verbose.
+        $bashArgs.Add((Join-Path $RepoRoot 'uninstall.sh'))
+        $bashArgs.Add('--yes')
+    } else {
+        $bashArgs.Add((Join-Path $RepoRoot 'install.sh'))
+        $bashArgs.Add('--yes')
+        if ($SkipAugment) { $bashArgs.Add('--skip-augment') }
+        if ($CategoryList) { $bashArgs.Add('--categories'); $bashArgs.Add($CategoryList) }
+        if ($Force) { $env:SUPERPOWERS_ALLOW_FOREIGN_ECOSYSTEM = '1' }
+    }
+    if ($VerbosePreference -eq 'Continue') { $bashArgs.Add('--verbose') }
     & bash @bashArgs
     exit $LASTEXITCODE
 }
@@ -137,29 +124,71 @@ function Update-SessionPath {
     $env:Path = $merged -join ';'
 }
 
-function Install-WingetPackage([string]$Id) {
-    if ($NoPrereqInstall) { Stop-Bootstrap "$Id is missing and -NoPrereqInstall was given. Install it: winget install --id $Id -e" }
+# Put $Dir first on this session's PATH, so the python3 shim wins over the
+# Microsoft Store python3.exe alias in WindowsApps.
+function Set-SessionPathFront([string]$Dir) {
+    $rest = @($env:Path.Split(';') | Where-Object { $_ -and ($_.TrimEnd('\') -ine $Dir.TrimEnd('\')) })
+    $env:Path = (@($Dir) + $rest) -join ';'
+}
+
+# Runs a native command and returns Code and Output without throwing:
+# PowerShell 5.1 turns redirected native stderr into a terminating error
+# under ErrorActionPreference=Stop.
+function Invoke-NativeQuiet([string]$Exe, [string[]]$Arguments) {
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $out = & $Exe @Arguments 2>$null
+        $rc = $LASTEXITCODE
+    } catch { $out = $null; $rc = 1 } finally { $ErrorActionPreference = $prev }
+    return [pscustomobject]@{ Code = $rc; Output = (@($out) -join "`n").Trim() }
+}
+
+function Test-Elevated {
+    $id = [Security.Principal.WindowsIdentity]::GetCurrent()
+    return (New-Object Security.Principal.WindowsPrincipal $id).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+# winget exit codes meaning the package is already there (APPINSTALLER_CLI_ERROR_
+# UPDATE_NOT_APPLICABLE 0x8A15002B, PACKAGE_ALREADY_INSTALLED 0x8A150061). Callers
+# re-probe after this returns, so a package installed somewhere the probe missed
+# still fails with a clear message there.
+$WingetAlreadyInstalled = @(-1978335189, -1978335135)
+
+# -MachineWide: the installer writes to Program Files and raises a UAC prompt
+# when not elevated; this repo's installers must not wait for a human, so stop.
+function Install-WingetPackage([string]$Id, [switch]$MachineWide) {
+    if ($NoPrereqInstall) { Stop-Bootstrap "$Id is missing or too old and -NoPrereqInstall was given. Install it: winget install --id $Id -e" }
     if (-not (Get-Command winget.exe -ErrorAction SilentlyContinue)) {
-        Stop-Bootstrap "$Id is missing and winget is not available. Install it manually, or re-run with -SkillsOnly."
+        Stop-Bootstrap "$Id is missing or too old and winget is not available. Install it manually, then re-run."
+    }
+    if ($MachineWide -and -not (Test-Elevated)) {
+        Stop-Bootstrap "$Id installs machine-wide and needs administrator rights. Re-run from an elevated PowerShell, or install it first: winget install --id $Id -e"
     }
     Write-Host "Installing $Id with winget..."
     & winget.exe install --id $Id -e --silent --accept-package-agreements --accept-source-agreements --disable-interactivity
-    if ($LASTEXITCODE -ne 0) { Stop-Bootstrap "winget install --id $Id failed (exit $LASTEXITCODE)" }
+    if ($WingetAlreadyInstalled -contains $LASTEXITCODE) {
+        Write-Host "winget reports $Id is already installed (exit $LASTEXITCODE); re-checking."
+    } elseif ($LASTEXITCODE -ne 0) {
+        Stop-Bootstrap "winget install --id $Id failed (exit $LASTEXITCODE)"
+    }
     Update-SessionPath
 }
 
 function Find-GitBash {
     $roots = New-Object System.Collections.Generic.List[string]
+    # The Git for Windows registry key is authoritative; a git.exe on PATH can
+    # belong to MSYS2 or Cygwin, whose bash is not the one Claude Code expects.
+    foreach ($key in @('HKLM:\SOFTWARE\GitForWindows', 'HKCU:\SOFTWARE\GitForWindows')) {
+        $p = Get-ItemProperty -Path $key -Name InstallPath -ErrorAction SilentlyContinue
+        if ($p) { $roots.Add($p.InstallPath) }
+    }
     $git = Get-Command git.exe -ErrorAction SilentlyContinue
     if ($git) {
         # <root>\cmd\git.exe, <root>\bin\git.exe or <root>\mingw64\bin\git.exe
         $d = Split-Path -Parent $git.Source
         $roots.Add((Split-Path -Parent $d))
         $roots.Add((Split-Path -Parent (Split-Path -Parent $d)))
-    }
-    foreach ($key in @('HKLM:\SOFTWARE\GitForWindows', 'HKCU:\SOFTWARE\GitForWindows')) {
-        $p = Get-ItemProperty -Path $key -Name InstallPath -ErrorAction SilentlyContinue
-        if ($p) { $roots.Add($p.InstallPath) }
     }
     if ($env:ProgramFiles) { $roots.Add((Join-Path $env:ProgramFiles 'Git')) }
     if ($env:LOCALAPPDATA) { $roots.Add((Join-Path $env:LOCALAPPDATA 'Programs\Git')) }
@@ -171,26 +200,32 @@ function Find-GitBash {
     return $null
 }
 
-# Real python.exe, skipping the Microsoft Store stubs in WindowsApps.
+# Minimum versions the installer documents: Python 3.8+, Node.js 18+.
+function Test-PythonExe([string]$Exe) {
+    $r = Invoke-NativeQuiet $Exe @('-c', 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)')
+    return ($r.Code -eq 0)
+}
+
+function Test-NodeOk {
+    $node = Get-Command node.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $node) { return $false }
+    $r = Invoke-NativeQuiet $node.Source @('--version')
+    return ($r.Code -eq 0 -and $r.Output -match '^v(\d+)\.' -and [int]$Matches[1] -ge 18)
+}
+
+# Real python.exe 3.8+, skipping the Microsoft Store stubs in WindowsApps.
 function Find-Python {
     if (Get-Command py.exe -ErrorAction SilentlyContinue) {
-        # PowerShell 5.1 turns redirected native stderr into a terminating
-        # error under ErrorActionPreference=Stop (py prints one when no
-        # Python 3 runtime is installed).
-        $prev = $ErrorActionPreference
-        $ErrorActionPreference = 'Continue'
-        try {
-            $exe = (& py.exe -3 -c 'import sys; print(sys.executable)' 2>$null | Select-Object -First 1)
-            $rc = $LASTEXITCODE
-        } catch { $exe = $null; $rc = 1 } finally { $ErrorActionPreference = $prev }
-        if ($rc -eq 0 -and $exe -and (Test-Path -LiteralPath "$exe".Trim() -PathType Leaf)) { return "$exe".Trim() }
+        $r = Invoke-NativeQuiet 'py.exe' @('-3', '-c', 'import sys; print(sys.executable)')
+        $exe = ($r.Output -split "`n" | Select-Object -First 1)
+        if ($r.Code -eq 0 -and $exe -and (Test-Path -LiteralPath "$exe".Trim() -PathType Leaf) -and (Test-PythonExe "$exe".Trim())) { return "$exe".Trim() }
     }
     foreach ($c in @(Get-Command python.exe -All -ErrorAction SilentlyContinue)) {
-        if ($c.Source -notmatch '\\WindowsApps\\') { return $c.Source }
+        if (($c.Source -notmatch '\\WindowsApps\\') -and (Test-PythonExe $c.Source)) { return $c.Source }
     }
     if ($env:LOCALAPPDATA) {
         $found = Get-ChildItem -Path (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python3*\python.exe') -ErrorAction SilentlyContinue |
-            Sort-Object FullName -Descending | Select-Object -First 1
+            Sort-Object FullName -Descending | Where-Object { Test-PythonExe $_.FullName } | Select-Object -First 1
         if ($found) { return $found.FullName }
     }
     return $null
@@ -211,8 +246,11 @@ function Add-UserPathFront([string]$Dir) {
     try {
         $user = [string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
         $parts = @($user.Split(';') | Where-Object { $_ })
-        if ($parts | Where-Object { [Environment]::ExpandEnvironmentVariables($_).TrimEnd('\') -ieq $Dir.TrimEnd('\') }) { return }
-        $key.SetValue('Path', ((@($Dir) + $parts) -join ';'), [Microsoft.Win32.RegistryValueKind]::ExpandString)
+        $isDir = { param($p) [Environment]::ExpandEnvironmentVariables($p).TrimEnd('\') -ieq $Dir.TrimEnd('\') }
+        # Already first: nothing to do. Present but not first: move it to the front.
+        if ($parts.Count -gt 0 -and (& $isDir $parts[0])) { return }
+        $rest = @($parts | Where-Object { -not (& $isDir $_) })
+        $key.SetValue('Path', ((@($Dir) + $rest) -join ';'), [Microsoft.Win32.RegistryValueKind]::ExpandString)
     } finally { $key.Close() }
     # Broadcast WM_SETTINGCHANGE so new processes see the change.
     [Environment]::SetEnvironmentVariable('SUPERPOWERS_PLUS_PATH_REFRESH', [Guid]::NewGuid().ToString(), 'User')
@@ -220,20 +258,35 @@ function Add-UserPathFront([string]$Dir) {
     Write-Host "Added $Dir to the front of the user PATH"
 }
 
-function Set-UserEnv([string]$Name, [string]$Value) {
-    if ([Environment]::GetEnvironmentVariable($Name, 'User') -ne $Value) {
+# Sets a user environment variable only when it is unset, already equal, or
+# (-ExistingPath) names a path that no longer exists. Otherwise the user's value
+# is kept and a warning says so (a portable Git, a deliberate PYTHONUTF8).
+# Returns the user-level value in effect.
+function Set-UserEnv([string]$Name, [string]$Value, [switch]$ExistingPath) {
+    $old = [Environment]::GetEnvironmentVariable($Name, 'User')
+    if ($old -and $old -ne $Value) {
+        if ($ExistingPath -and -not (Test-Path -LiteralPath $old)) {
+            Write-Warning "$Name pointed at '$old', which no longer exists; replacing it"
+        } else {
+            Write-Warning "$Name is already set to '$old'; keeping it (installer would use '$Value')"
+            return $old
+        }
+    }
+    if ($old -ne $Value) {
         [Environment]::SetEnvironmentVariable($Name, $Value, 'User')
         Write-Host "Set user environment variable $Name=$Value"
     }
-    Set-Item -Path "Env:$Name" -Value $Value
+    return $Value
 }
 
 $ShimMarker = 'superpowers-plus python3 shim'
 
 # python3 for Git Bash, python3.cmd for PowerShell and CMD (PATHEXT).
 function Install-Python3Shim([string]$PythonExe, [string]$BinDir) {
+    # Single-quote the path for bash so a $ or backtick in it stays literal.
+    $quoted = (ConvertTo-MsysPath $PythonExe).Replace("'", "'\''")
     $shims = @{
-        'python3'     = "#!/usr/bin/env bash`n# $ShimMarker`nexec `"$(ConvertTo-MsysPath $PythonExe)`" `"`$@`"`n"
+        'python3'     = "#!/usr/bin/env bash`n# $ShimMarker`nexec '$quoted' `"`$@`"`n"
         'python3.cmd' = "@rem $ShimMarker`r`n@`"$PythonExe`" %*`r`n"
     }
     [void][IO.Directory]::CreateDirectory($BinDir)
@@ -257,413 +310,83 @@ function Remove-Python3Shim([string]$BinDir) {
     }
 }
 
-if (-not $SkillsOnly) {
-    Update-SessionPath
-    $binDir = Join-Path $HOME '.local\bin'
-    $bashArgs = New-Object System.Collections.Generic.List[string]
-    if ($Uninstall) {
-        $gitBash = Find-GitBash
-        if (-not $gitBash) { Stop-Bootstrap 'Git Bash (bash.exe) not found. Install Git for Windows, or re-run with -SkillsOnly -Uninstall.' }
-        $bashArgs.Add((ConvertTo-MsysPath (Join-Path $RepoRoot 'uninstall.sh')))
-        $bashArgs.Add('--yes')
-    } else {
-        if (-not (Find-GitBash)) { Install-WingetPackage 'Git.Git' }
-        $gitBash = Find-GitBash
-        if (-not $gitBash) { Stop-Bootstrap 'Git Bash (bash.exe) not found after installing Git for Windows. Re-run with -SkillsOnly to deploy skills without it.' }
-        if (-not (Get-Command node.exe -ErrorAction SilentlyContinue)) { Install-WingetPackage 'OpenJS.NodeJS.LTS' }
-        if (-not (Find-Python)) { Install-WingetPackage 'Python.Python.3.12' }
-        $python = Find-Python
-        if (-not $python) { Stop-Bootstrap 'python.exe not found after installing Python 3.' }
-        if (-not (Get-Command jq.exe -ErrorAction SilentlyContinue)) { Install-WingetPackage 'jqlang.jq' }
-
-        Install-Python3Shim $python $binDir
-        Add-UserPathFront $binDir
-        Set-UserEnv 'CLAUDE_CODE_GIT_BASH_PATH' $gitBash
-        Set-UserEnv 'PYTHONUTF8' '1'
-        Update-SessionPath
-
-        $bashArgs.Add((ConvertTo-MsysPath (Join-Path $RepoRoot 'install.sh')))
-        $bashArgs.Add('--yes')
-        if ($Force) { $bashArgs.Add('--force') }
-        if ($SkipAugment) { $bashArgs.Add('--skip-augment') }
-        if ($CategoryList) { $bashArgs.Add('--categories'); $bashArgs.Add($CategoryList) }
-        if ($VerbosePreference -eq 'Continue') { $bashArgs.Add('--verbose') }
-    }
-    # Git Bash derives HOME from HOMEDRIVE/HOMEPATH, which can point at a
-    # network share; the AI tools read skills from USERPROFILE.
-    if (-not $env:HOME) { $env:HOME = $env:USERPROFILE }
-    Write-Host "Running under Git Bash ($gitBash): $($bashArgs -join ' ')"
-    & $gitBash @bashArgs
-    $rc = $LASTEXITCODE
-    if ($rc -eq 0 -and $Uninstall) { Remove-Python3Shim $binDir }
-    if ($rc -eq 0 -and -not $Uninstall) { Write-Host 'Open a new terminal so PATH and environment changes take effect, then restart your AI tool.' }
-    exit $rc
-}
-
-# --- Windows: native deploy (-SkillsOnly) ----------------------------------
-
-$CodexDir = Join-Path $HOME '.codex'
-$SkillsDir = Join-Path $CodexDir 'skills'
-$ClaudeSkillsDir = Join-Path (Join-Path $HOME '.claude') 'skills'
-$AugmentMenuDir = Join-Path (Join-Path $HOME '.agents') 'skills'
-$AdapterDir = Join-Path $CodexDir 'superpowers-augment'
-$StateDir = Join-Path (Join-Path $CodexDir 'superpowers-plus') 'install-state'
-$Manifest = Join-Path $StateDir 'skills.manifest'
-$EcosystemLock = Join-Path $CodexDir '.superpowers-ecosystem'
-$Utf8NoBom = New-Object System.Text.UTF8Encoding $false
-
-$SkillTargets = @($ClaudeSkillsDir)
-if (-not $SkipAugment) { $SkillTargets = @($SkillsDir, $ClaudeSkillsDir) }
-
-function Write-Info([string]$Message) { Write-Host $Message }
-function Write-Warn([string]$Message) { Write-Warning $Message }
-function Stop-Install([string]$Message) {
-    [Console]::Error.WriteLine("error: $Message")
-    exit 1
-}
-
-function Test-SkillName([string]$Name) {
-    return $Name -cmatch '^[A-Za-z0-9][A-Za-z0-9_-]*$'
-}
-
-function Test-ReparsePoint($Item) {
-    return [bool]($Item.Attributes -band [IO.FileAttributes]::ReparsePoint)
-}
-
-# SKILL.md wins over skill.md, matching deploy.sh.
-function Get-SkillFile([string]$Dir) {
-    foreach ($name in @('SKILL.md', 'skill.md')) {
-        $path = Join-Path $Dir $name
-        if (Test-Path -LiteralPath $path -PathType Leaf) {
-            $leaf = (Get-Item -LiteralPath $path -Force).Name
-            return (Join-Path $Dir $leaf)
-        }
-    }
-    return $null
-}
-
-# First /sp* trigger, using the same three patterns as _extract_sp_trigger().
-function Get-SpTrigger([string]$File) {
-    $lines = [IO.File]::ReadAllLines($File)
-    foreach ($line in $lines) {
-        if ($line -notmatch '^triggers:') { continue }
-        if ($line -match '"(/sp[^"]*)"') { return $Matches[1] }
-        if ($line -match "'(/sp[^']*)'") { return $Matches[1] }
-        break
-    }
-    foreach ($line in $lines) {
-        if ($line -match '^ *- (/sp.*)$') { return $Matches[1] }
-    }
-    return ''
-}
-
-function Get-DestName([string]$SkillDir) {
-    $file = Get-SkillFile $SkillDir
-    if ($file) {
-        $t = Get-SpTrigger $file
-        if ($t) { return $t.Substring(1) }
-    }
-    return (Split-Path -Leaf $SkillDir)
-}
-
-# Remove a file, directory tree, or link without following a link.
-function Remove-Entry([string]$Path) {
-    $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
-    if ($null -eq $item) { return }
-    if (Test-ReparsePoint $item) {
-        if ($item.PSIsContainer) { [IO.Directory]::Delete($Path) } else { [IO.File]::Delete($Path) }
-    } elseif ($item.PSIsContainer) {
-        [IO.Directory]::Delete($Path, $true)
-    } else {
-        [IO.File]::Delete($Path)
-    }
-}
-
-# Recursive copy that skips links so a skill cannot pull in outside files.
-function Copy-Tree([string]$Source, [string]$Destination) {
-    [void][IO.Directory]::CreateDirectory($Destination)
-    foreach ($entry in (Get-ChildItem -LiteralPath $Source -Force)) {
-        if (Test-ReparsePoint $entry) { continue }
-        $to = Join-Path $Destination $entry.Name
-        if ($entry.PSIsContainer) { Copy-Tree $entry.FullName $to }
-        else { [IO.File]::Copy($entry.FullName, $to, $true) }
-    }
-}
-
-function Write-TextFile([string]$Path, [string]$Content) {
-    [void][IO.Directory]::CreateDirectory((Split-Path -Parent $Path))
-    $tmp = "$Path.tmp.$PID"
-    [IO.File]::WriteAllText($tmp, $Content, $Utf8NoBom)
-    Move-Item -LiteralPath $tmp -Destination $Path -Force
-}
-
-function Test-SourceTag([string]$Dir) {
-    $file = Get-SkillFile $Dir
-    if ($null -eq $file) { return $false }
-    foreach ($line in [IO.File]::ReadAllLines($file)) {
-        if ($line -cmatch "^source: $Ecosystem\s*$") { return $true }
-    }
-    return $false
-}
-
-function Read-Manifest {
-    if (-not (Test-Path -LiteralPath $Manifest -PathType Leaf)) { return $null }
-    $names = New-Object System.Collections.Generic.List[string]
-    foreach ($line in [IO.File]::ReadAllLines($Manifest)) {
-        $n = $line.Trim()
-        if (-not $n) { continue }
-        if (-not (Test-SkillName $n)) { Write-Warn "skipping unsafe manifest entry '$n'"; continue }
-        $names.Add($n)
-    }
-    return , $names.ToArray()
-}
-
-function Assert-Ecosystem {
-    if (-not (Test-Path -LiteralPath $EcosystemLock -PathType Leaf)) { return }
-    $installed = ([IO.File]::ReadAllLines($EcosystemLock) | Select-Object -First 1)
-    if ($null -eq $installed) { return }
-    $installed = $installed.Trim()
-    if ($installed -eq '' -or $installed -eq $Ecosystem) { return }
-    if ($Force) {
-        Write-Warn "foreign superpowers ecosystem '$installed' found in $EcosystemLock; -Force given, overwriting"
-        return
-    }
-    Stop-Install "a different superpowers ecosystem ('$installed') is already deployed at $EcosystemLock. Remove it before installing $Ecosystem, or re-run with -Force."
-}
-
-# --- Skill discovery -------------------------------------------------------
-
-# Skill source dirs as objects with Dir and Name (deploy name). Mirrors the
-# walk in install_skills(): skills/<skill>/ or skills/<domain>/<skill>/,
-# skipping names that start with '_', filtered by -Categories.
-function Get-SourceSkills([string[]]$Selected) {
-    $result = New-Object System.Collections.Generic.List[object]
-    $root = Join-Path $RepoRoot 'skills'
-    foreach ($top in (Get-ChildItem -LiteralPath $root -Directory -Force | Sort-Object Name)) {
-        if ($top.Name.StartsWith('_')) { continue }
-        if ($Selected.Count -gt 0 -and $Selected -notcontains $top.Name) { continue }
-        if ($null -ne (Get-SkillFile $top.FullName)) {
-            $result.Add([pscustomobject]@{ Dir = $top.FullName; Name = (Get-DestName $top.FullName) })
-            continue
-        }
-        foreach ($sub in (Get-ChildItem -LiteralPath $top.FullName -Directory -Force | Sort-Object Name)) {
-            if ($sub.Name.StartsWith('_')) { continue }
-            if ($null -eq (Get-SkillFile $sub.FullName)) { continue }
-            $result.Add([pscustomobject]@{ Dir = $sub.FullName; Name = (Get-DestName $sub.FullName) })
-        }
-    }
-    return , $result.ToArray()
-}
-
-function Get-SelectedCategories {
-    if (-not $CategoryList -or $CategoryList -eq 'all') { return , @() }
-    $root = Join-Path $RepoRoot 'skills'
-    $available = @(Get-ChildItem -LiteralPath $root -Directory -Force |
-        Where-Object { -not $_.Name.StartsWith('_') } | ForEach-Object { $_.Name })
-    $selected = @($CategoryList.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-    foreach ($c in $selected) {
-        if ($available -notcontains $c) {
-            Stop-Install "unknown category '$c'. Available: $($available -join ', ')"
-        }
-    }
-    return , $selected
-}
-
-# --- Deploy ----------------------------------------------------------------
-
-function Install-Skill($Skill, $Errors) {
-    if (-not (Test-SkillName $Skill.Name)) {
-        Write-Warn "skipping '$($Skill.Dir)': unsafe deploy name '$($Skill.Name)'"
-        return $false
-    }
-    foreach ($target in $SkillTargets) {
-        $dest = Join-Path $target $Skill.Name
-        try {
-            [void][IO.Directory]::CreateDirectory($target)
-            Remove-Entry $dest
-            Copy-Tree $Skill.Dir $dest
-        } catch {
-            $Errors.Add("$($Skill.Name): deploy -> ${dest}: $($_.Exception.Message)")
-            return $false
-        }
-    }
-    return $true
-}
-
-# Remove names from the previous manifest that this run did not deploy.
-# Without a manifest, fall back to folders tagged source: superpowers-plus.
-function Remove-StaleSkills([string[]]$Current, $Previous) {
-    $keep = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
-    foreach ($n in $Current) { [void]$keep.Add($n) }
-    foreach ($target in $SkillTargets) {
-        if (-not (Test-Path -LiteralPath $target -PathType Container)) { continue }
-        $candidates = @()
-        if ($null -ne $Previous) { $candidates = $Previous }
-        else {
-            $candidates = @(Get-ChildItem -LiteralPath $target -Directory -Force |
-                Where-Object { -not $_.Name.StartsWith('_') -and (Test-SourceTag $_.FullName) } |
-                ForEach-Object { $_.Name })
-        }
-        foreach ($name in $candidates) {
-            if ($keep.Contains($name)) { continue }
-            $dest = Join-Path $target $name
-            if ($null -eq (Get-Item -LiteralPath $dest -Force -ErrorAction SilentlyContinue)) { continue }
-            try { Remove-Entry $dest; Write-Verbose "removed stale skill $dest" } catch {
-                Write-Warn "could not remove stale skill ${dest}: $($_.Exception.Message)"
-            }
+# sp-* wrappers written by lib/install/deploy.sh on Windows. uninstall.sh removes
+# them only under --purge, so -Uninstall removes the ones that exec a script in
+# the managed checkout (~/.codex/superpowers-plus) and leaves any other file.
+function Remove-SpWrappers([string]$BinDir) {
+    if (-not (Test-Path -LiteralPath $BinDir -PathType Container)) { return }
+    foreach ($f in @(Get-ChildItem -LiteralPath $BinDir -File -Filter 'sp-*' -ErrorAction SilentlyContinue)) {
+        if ((Select-String -LiteralPath $f.FullName -SimpleMatch '# superpowers-plus sp-* wrapper' -Quiet) -and
+            (Select-String -LiteralPath $f.FullName -SimpleMatch '/.codex/superpowers-plus/' -Quiet)) {
+            Remove-Item -LiteralPath $f.FullName -Force
+            Write-Host "Removed $($f.FullName)"
         }
     }
 }
 
-function Install-Shared([System.Collections.Generic.List[string]]$Errors) {
-    $src = Join-Path (Join-Path $RepoRoot 'skills') '_shared'
-    if (-not (Test-Path -LiteralPath $src -PathType Container)) { return }
-    foreach ($target in $SkillTargets) {
-        $dest = Join-Path $target '_shared'
-        try {
-            Remove-Entry $dest
-            Copy-Tree $src $dest
-        } catch {
-            $Errors.Add("failed to deploy _shared/ to ${dest}: $($_.Exception.Message)")
-            Write-Warn "failed to deploy _shared/ to ${dest}: $($_.Exception.Message)"
-        }
+# install.sh runs under Git Bash and needs python3 there to be a working 3.8+
+# that is the shim (not the Store alias). Check what Git Bash itself resolves.
+function Assert-Python3InGitBash([string]$GitBash) {
+    $which = Invoke-NativeQuiet $GitBash @('-c', 'command -v python3')
+    if ($which.Code -ne 0 -or $which.Output -notlike '*/.local/bin/python3') {
+        Stop-Bootstrap "python3 in Git Bash resolves to '$($which.Output)', not the shim in ~/.local/bin. Remove or rename the conflicting python3, then re-run."
+    }
+    $ver = Invoke-NativeQuiet $GitBash @('-c', "python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)'")
+    if ($ver.Code -ne 0) {
+        Stop-Bootstrap "python3 in Git Bash ($($which.Output)) is not a working Python 3.8 or newer. If ~/.local/bin/python3 was not written by superpowers-plus, remove it and re-run."
     }
 }
 
-# Copy augment_menu: true skills from ~/.codex/skills to ~/.agents/skills as
-# SKILL.md. Prunes this ecosystem's stale entries only.
-function Export-AugmentMenu([object[]]$Deployed) {
-    [void][IO.Directory]::CreateDirectory($AugmentMenuDir)
-    $exported = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
-    foreach ($s in $Deployed) {
-        $installed = Join-Path $SkillsDir $s.Name
-        $file = Get-SkillFile $installed
-        if ($null -eq $file) { continue }
-        if (-not ([IO.File]::ReadAllLines($file) | Where-Object { $_ -match '^augment_menu: *true' })) { continue }
-        $dest = Join-Path $AugmentMenuDir $s.Name
-        try {
-            Remove-Entry $dest
-            Copy-Tree $installed $dest
-            $lower = Join-Path $dest 'skill.md'
-            if ((Test-Path -LiteralPath $lower -PathType Leaf) -and (Get-Item -LiteralPath $lower -Force).Name -ceq 'skill.md') {
-                # Two-step rename so the case change sticks on case-insensitive NTFS.
-                $tmp = Join-Path $dest '_skill_tmp.md'
-                [IO.File]::Move($lower, $tmp)
-                [IO.File]::Move($tmp, (Join-Path $dest 'SKILL.md'))
-            }
-            [void]$exported.Add($s.Name)
-        } catch {
-            Write-Warn "failed to export $($s.Name) to ${dest}: $($_.Exception.Message)"
-        }
-    }
-    foreach ($dir in (Get-ChildItem -LiteralPath $AugmentMenuDir -Directory -Force)) {
-        if ($exported.Contains($dir.Name) -or -not (Test-SourceTag $dir.FullName)) { continue }
-        try { Remove-Entry $dir.FullName } catch {
-            Write-Warn "could not remove stale slash menu skill $($dir.FullName): $($_.Exception.Message)"
-        }
-    }
-    Write-Info "Exported $($exported.Count) skill(s) to Augment slash menu ($AugmentMenuDir)"
-}
-
-function Install-Adapter {
-    $src = Join-Path $RepoRoot 'superpowers-augment.js'
-    if (-not (Test-Path -LiteralPath $src -PathType Leaf)) {
-        Write-Warn "adapter source not found: $src"
-        return
-    }
-    [void][IO.Directory]::CreateDirectory($AdapterDir)
-    [IO.File]::Copy($src, (Join-Path $AdapterDir 'superpowers-augment.js'), $true)
-    $libSrc = Join-Path $RepoRoot 'lib'
-    if (Test-Path -LiteralPath $libSrc -PathType Container) {
-        $libDest = Join-Path $AdapterDir 'lib'
-        Remove-Entry $libDest
-        Copy-Tree $libSrc $libDest
-    }
-    Write-Info "Adapter installed: $AdapterDir"
-}
-
-# --- Uninstall -------------------------------------------------------------
-
-function Invoke-Uninstall {
-    $names = Read-Manifest
-    if ($null -eq $names) {
-        Write-Warn "no manifest at $Manifest; removing skills tagged source: $Ecosystem"
-        $names = @()
-    }
-    $removed = 0
-    foreach ($target in @($SkillsDir, $ClaudeSkillsDir)) {
-        if (-not (Test-Path -LiteralPath $target -PathType Container)) { continue }
-        $candidates = @($names)
-        $candidates += @(Get-ChildItem -LiteralPath $target -Directory -Force |
-            Where-Object { -not $_.Name.StartsWith('_') -and (Test-SourceTag $_.FullName) } |
-            ForEach-Object { $_.Name })
-        foreach ($name in ($candidates | Sort-Object -Unique)) {
-            $dest = Join-Path $target $name
-            if ($null -eq (Get-Item -LiteralPath $dest -Force -ErrorAction SilentlyContinue)) { continue }
-            Remove-Entry $dest
-            $removed++
-        }
-        Remove-Entry (Join-Path $target '_shared')
-    }
-    if (Test-Path -LiteralPath $AugmentMenuDir -PathType Container) {
-        foreach ($dir in (Get-ChildItem -LiteralPath $AugmentMenuDir -Directory -Force)) {
-            if (Test-SourceTag $dir.FullName) { Remove-Entry $dir.FullName; $removed++ }
-        }
-    }
-    Remove-Entry $AdapterDir
-    Remove-Entry $Manifest
-    if (Test-Path -LiteralPath $EcosystemLock -PathType Leaf) {
-        $owner = ([IO.File]::ReadAllLines($EcosystemLock) | Select-Object -First 1)
-        if ($null -ne $owner -and $owner.Trim() -eq $Ecosystem) { Remove-Entry $EcosystemLock }
-    }
-    Write-Info "Removed $removed skill folder(s), _shared/, and the Augment adapter."
-}
-
-# --- Main ------------------------------------------------------------------
-
-if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot 'skills') -PathType Container)) {
-    Stop-Install "skills/ not found next to install.ps1 ($RepoRoot)"
-}
-
+$binDir = Join-Path $HOME '.local\bin'
+# Git Bash derives HOME from HOMEDRIVE/HOMEPATH, which can point at a
+# network share; the AI tools read skills from USERPROFILE.
+if (-not $env:HOME) { $env:HOME = $env:USERPROFILE }
+Update-SessionPath
+$bashArgs = New-Object System.Collections.Generic.List[string]
 if ($Uninstall) {
-    try { Invoke-Uninstall } catch { Stop-Install $_.Exception.Message }
-    exit 0
+    $gitBash = Find-GitBash
+    if (-not $gitBash) { Stop-Bootstrap 'Git Bash (bash.exe) not found. Install Git for Windows, then re-run.' }
+    $bashArgs.Add((ConvertTo-MsysPath (Join-Path $RepoRoot 'uninstall.sh')))
+    $bashArgs.Add('--yes')
+} else {
+    if (-not (Find-GitBash)) { Install-WingetPackage 'Git.Git' -MachineWide }
+    $gitBash = Find-GitBash
+    if (-not $gitBash) { Stop-Bootstrap 'Git Bash (bash.exe) not found after installing Git for Windows.' }
+    if (-not (Test-NodeOk)) { Install-WingetPackage 'OpenJS.NodeJS.LTS' -MachineWide }
+    if (-not (Test-NodeOk)) { Stop-Bootstrap 'Node.js 18 or newer not found on PATH after installing it. Open a new terminal and re-run.' }
+    if (-not (Find-Python)) { Install-WingetPackage 'Python.Python.3.12' }
+    $python = Find-Python
+    if (-not $python) { Stop-Bootstrap 'Python 3.8 or newer (python.exe) not found after installing Python 3.' }
+    if (-not (Get-Command jq.exe -ErrorAction SilentlyContinue)) { Install-WingetPackage 'jqlang.jq' }
+    if (-not (Get-Command jq.exe -ErrorAction SilentlyContinue)) { Stop-Bootstrap 'jq.exe not found on PATH after installing it. Open a new terminal and re-run.' }
+
+    Install-Python3Shim $python $binDir
+    Add-UserPathFront $binDir
+    $effectiveBash = Set-UserEnv 'CLAUDE_CODE_GIT_BASH_PATH' $gitBash -ExistingPath
+    $env:CLAUDE_CODE_GIT_BASH_PATH = $effectiveBash
+    [void](Set-UserEnv 'PYTHONUTF8' '1')
+    $env:PYTHONUTF8 = '1'
+    Update-SessionPath
+    # The registry PATH is not enough for this run: put the shim directory first
+    # on the session PATH too, ahead of the WindowsApps python3.exe alias.
+    Set-SessionPathFront $binDir
+    Assert-Python3InGitBash $gitBash
+
+    $bashArgs.Add((ConvertTo-MsysPath (Join-Path $RepoRoot 'install.sh')))
+    $bashArgs.Add('--yes')
+    if ($SkipAugment) { $bashArgs.Add('--skip-augment') }
+    if ($CategoryList) { $bashArgs.Add('--categories'); $bashArgs.Add($CategoryList) }
+    # -Force only bypasses the ecosystem lock; install.sh --force would also
+    # git reset --hard / clean -fd the managed checkout.
+    if ($Force) { $env:SUPERPOWERS_ALLOW_FOREIGN_ECOSYSTEM = '1' }
 }
-
-Assert-Ecosystem
-$selected = Get-SelectedCategories
-$skills = Get-SourceSkills $selected
-$previous = Read-Manifest
-
-$errors = New-Object System.Collections.Generic.List[string]
-$deployed = New-Object System.Collections.Generic.List[object]
-foreach ($s in $skills) {
-    if (Install-Skill $s $errors) { $deployed.Add($s) }
+if ($VerbosePreference -eq 'Continue') { $bashArgs.Add('--verbose') }
+Write-Host "Running under Git Bash ($gitBash): $($bashArgs -join ' ')"
+& $gitBash @bashArgs
+$rc = $LASTEXITCODE
+if ($rc -eq 0 -and $Uninstall) {
+    Remove-Python3Shim $binDir
+    Remove-SpWrappers $binDir
 }
-foreach ($e in $errors) { Write-Warn $e }
-
-if ($deployed.Count -eq 0) {
-    Stop-Install 'no skills were installed; skipping prune to prevent mass deletion'
-}
-
-$currentNames = @($deployed | ForEach-Object { $_.Name } | Sort-Object -Unique -CaseSensitive)
-Remove-StaleSkills $currentNames $previous
-Install-Shared $errors
-Write-TextFile $Manifest (($currentNames -join "`n") + "`n")
-
-if (-not $SkipAugment) {
-    Export-AugmentMenu $deployed.ToArray()
-    Install-Adapter
-}
-
-Write-TextFile $EcosystemLock "$Ecosystem`n"
-
-Write-Info ''
-Write-Info "Installed $($deployed.Count) skill(s) to:"
-foreach ($t in $SkillTargets) { Write-Info "  $t" }
-Write-Info ''
-Write-Info 'Not installed with -SkillsOnly (run install.ps1 without it for these):'
-Write-Info '  Claude Code lifecycle hooks, git commit and push gates, tools, rules, templates, Claude Desktop ZIPs.'
-Write-Info 'Restart your AI tool to pick up the new skills.'
-if ($errors.Count -gt 0) { exit 1 }
-exit 0
+if ($rc -eq 0 -and -not $Uninstall) { Write-Host 'Open a new terminal so PATH and environment changes take effect, then restart your AI tool.' }
+exit $rc

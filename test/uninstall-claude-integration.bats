@@ -183,6 +183,21 @@ PY
     [ -L "$HOME/.local/bin/sp-mine" ]
 }
 
+# Git Bash installs write wrapper scripts, not symlinks (lib/install/deploy.sh).
+# The wrapper single-quotes the script path, so the sweep must recognise that form.
+@test "uninstall --purge: removes sp-* wrapper scripts into the checkout, keeps others" {
+    local m="$HOME/.codex/superpowers-plus" b="$HOME/.local/bin"
+    printf '#!/usr/bin/env bash\n# superpowers-plus sp-* wrapper\nexec bash '"'"'%s/tools/sp-update.sh'"'"' "$@"\n' "$m" > "$b/sp-wrapped"
+    printf '#!/usr/bin/env bash\n# superpowers-plus sp-* wrapper\nexec bash '"'"'/elsewhere/sp-x.sh'"'"' "$@"\n' > "$b/sp-other-checkout"
+    printf '#!/usr/bin/env bash\necho mine\n' > "$b/sp-user-script"
+    run bash "$REPO_ROOT/uninstall.sh" --yes --purge
+    [ "$status" -eq 0 ]
+    [ ! -e "$b/sp-wrapped" ]
+    [ -f "$b/sp-other-checkout" ]
+    [ -f "$b/sp-user-script" ]
+}
+
+
 # Regression (reviewer repro, 2026-09-21): matching a shipped hook path ANYWHERE
 # in the command deleted user hooks that merely mentioned one. Only the invoked
 # program counts.

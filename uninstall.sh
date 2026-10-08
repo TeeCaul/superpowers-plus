@@ -250,7 +250,7 @@ remove_cli_links() {
             # Git Bash installs write wrapper scripts instead of symlinks.
             if [[ -f "$link" && ! -L "$link" ]] \
                 && grep -qF "# superpowers-plus sp-* wrapper" "$link" 2>/dev/null \
-                && grep -qF "exec bash \"$MANAGED_DIR/" "$link" 2>/dev/null; then
+                && grep -qF "exec bash '$MANAGED_DIR/" "$link" 2>/dev/null; then
                 run_rm "$link"
                 removed=$((removed + 1))
                 continue

@@ -31,6 +31,8 @@ _THIS_SUPERPOWERS_ECOSYSTEM="superpowers-plus"
 # check_foreign_ecosystem
 # Reads the lock file and aborts if a different ecosystem is deployed here.
 # Pass --force to bypass (with a warning).  Globals read: FORCE (default false)
+# SUPERPOWERS_ALLOW_FOREIGN_ECOSYSTEM=1 bypasses this check ONLY; unlike --force
+# it does not reset or clean the managed checkout (install.ps1 -Force uses it).
 check_foreign_ecosystem() {
     [[ ! -f "$_SUPERPOWERS_ECOSYSTEM_LOCK" ]] && return 0
 
@@ -40,9 +42,9 @@ check_foreign_ecosystem() {
     # Empty file or same ecosystem — nothing to do.
     [[ -z "$installed" || "$installed" == "$_THIS_SUPERPOWERS_ECOSYSTEM" ]] && return 0
 
-    if [[ "${FORCE:-false}" == "true" ]]; then
+    if [[ "${FORCE:-false}" == "true" || "${SUPERPOWERS_ALLOW_FOREIGN_ECOSYSTEM:-}" == "1" ]]; then
         log_warn "Foreign superpowers ecosystem detected ('${installed}')."
-        log_warn "--force supplied: proceeding. The existing deployment will be overwritten."
+        log_warn "Override supplied: proceeding. The existing deployment will be overwritten."
         return 0
     fi
 
@@ -891,9 +893,13 @@ install_cli_commands() {
                 log_warn "$cmd_name exists at $link but is not a superpowers-plus wrapper — skipping (if it is an outdated copy from an earlier install, delete it and re-run)"
                 continue
             fi
+            # Single-quote the path in the wrapper ('\'' escapes an embedded
+            # quote) so $, backticks and " in a Windows profile path stay literal.
+            local sq="'"
+            local quoted_script="${script//$sq/$sq\\$sq$sq}"
             # rm first: writing through a real symlink would overwrite $script.
             if rm -f "$link" \
-                && printf '#!/usr/bin/env bash\n%s\nexec bash "%s" "$@"\n' "$wrapper_marker" "$script" > "$link" \
+                && printf '#!/usr/bin/env bash\n%s\nexec bash %s%s%s "$@"\n' "$wrapper_marker" "$sq" "$quoted_script" "$sq" > "$link" \
                 && chmod +x "$link" 2>/dev/null; then
                 installed=$((installed + 1))
             else

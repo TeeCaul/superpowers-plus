@@ -22,11 +22,11 @@ bash install.sh
 The installer automatically:
 
 - Includes the 14 bundled obra/superpowers skills (no separate install)
-- Deploys skills to `~/.codex/skills/`, `~/.claude/skills/`, and (skills tagged `augment_menu: true`) `~/.agents/skills/`, which Codex reads
+- Deploys skills to `~/.codex/skills/` and `~/.claude/skills/`
 - Sets up the bootstrap script and agent configuration
 - Auto-fixes CRLF line endings on Windows/WSL
 
-> **Windows (no WSL):** In PowerShell run `git clone https://github.com/bordenet/superpowers-plus.git $HOME\.codex\superpowers-plus`, `cd $HOME\.codex\superpowers-plus`, then `powershell -ExecutionPolicy Bypass -File .\install.ps1`. It installs prerequisites with winget (including Git Bash) and runs `install.sh` under Git Bash. Use `-SkillsOnly` to copy skills only.
+> **Windows (no WSL):** In PowerShell run `git clone https://github.com/bordenet/superpowers-plus.git $HOME\.codex\superpowers-plus`, `cd $HOME\.codex\superpowers-plus`, then `powershell -ExecutionPolicy Bypass -File .\install.ps1`. It installs prerequisites with winget (including Git Bash) and runs `install.sh` under Git Bash.
 
 ## Verify Installation
 

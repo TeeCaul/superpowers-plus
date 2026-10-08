@@ -14,8 +14,7 @@ Return to the [README](../README.md).
 - **Augment Agent only:** one-liner bootstrap for Ubuntu / Debian / WSL
 - **Claude Code:** use `install.sh` for complete setup, or `/plugin install` for plugin-only mode
 - **Windows without WSL:** `install.ps1` (full install under Git Bash; see [Windows (native)](#windows-native))
-- **Codex:** see [Codex](#codex) below
-- **OpenCode:** use the platform-specific instructions below
+- **Codex / OpenCode:** use the platform-specific instructions below
 - **Claude Desktop:** the core install covers the Code tab and builds ZIPs to upload for the Chat and Cowork tabs; see [Claude Desktop](../README.md#claude-desktop)
 - **Another MCP client:** do the core install first, then add the optional MCP server
 
@@ -56,20 +55,9 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 
 Open a new terminal afterwards so the changes take effect. If WSL is also installed, `bash` typed in PowerShell starts WSL, because `C:\Windows\System32\bash.exe` comes first on the system `PATH`. To open Git Bash, use Git Bash from the Start menu or run `& $env:CLAUDE_CODE_GIT_BASH_PATH`. Claude Code is not affected.
 
-Options: `-Categories <a,b>`, `-SkipAugment`, `-Force` (passed through as the matching `install.sh` flags), `-NoPrereqInstall`, `-SkillsOnly`, and `-Uninstall`. `-Force` (via `install.sh --force`) can run `git reset --hard origin/main` and `git clean -fd` in `~\.codex\superpowers-plus` if that checkout is ahead of or has diverged from `origin/main`. `-Uninstall` runs `uninstall.sh` under Git Bash and removes the `python3` shims; it installs nothing, and leaves the `~\.local\bin` PATH entry, `CLAUDE_CODE_GIT_BASH_PATH`, `PYTHONUTF8`, and winget packages in place. With `-SkillsOnly`, `-Categories` is not remembered between runs.
+Options: `-Categories <a,b>`, `-SkipAugment`, `-Force`, `-NoPrereqInstall`, and `-Uninstall`. `-Categories` and `-SkipAugment` are passed to `install.sh`. `-Force` only bypasses the ecosystem lock in `~\.codex\.superpowers-ecosystem` (it sets `SUPERPOWERS_ALLOW_FOREIGN_ECOSYSTEM=1`); it does not pass `install.sh --force`, which would also run `git reset --hard origin/main` and `git clean -fd` in `~\.codex\superpowers-plus`. `-Uninstall` runs `uninstall.sh` under Git Bash and removes the `python3` shims and `sp-*` wrappers; it installs nothing, and leaves the `~\.local\bin` PATH entry, `CLAUDE_CODE_GIT_BASH_PATH`, `PYTHONUTF8`, and winget packages in place.
 
-`-SkillsOnly` deploys skills with PowerShell only, with no Git Bash or other prerequisites. It writes the same locations and manifest as `install.sh`:
-
-| Path | Contents |
-|------|----------|
-| `~\.codex\skills` | All skills plus `_shared` (Augment Agent) |
-| `~\.claude\skills` | All skills plus `_shared` (Claude Code) |
-| `~\.agents\skills` | Skills tagged `augment_menu: true`, as `SKILL.md` (Augment slash menu, Codex) |
-| `~\.codex\superpowers-augment` | `superpowers-augment.js` and `lib/` |
-| `~\.codex\superpowers-plus\install-state\skills.manifest` | Deployed skill names, used to prune removed skills on the next run |
-| `~\.codex\.superpowers-ecosystem` | Which superpowers ecosystem owns this install (checked on every install; `-Force` overrides) |
-
-With `-SkillsOnly`, lifecycle hooks, git gates, tools, rules, templates, and Claude Desktop ZIPs are not installed, and `-Uninstall` removes only what this table lists. On macOS and Linux, `install.ps1` runs `bash install.sh`.
+Git for Windows and Node.js install machine-wide, so `install.ps1` installs them only from an elevated PowerShell; from a normal one it stops with instructions instead of raising a UAC prompt. An existing `CLAUDE_CODE_GIT_BASH_PATH` or `PYTHONUTF8` is kept (with a warning) unless unset or pointing at a path that no longer exists. Python must be 3.8+ and Node.js 18+. Earlier versions of `install.ps1` were a WSL wrapper; it now installs natively into your Windows profile. On macOS and Linux, `install.ps1` runs `bash install.sh` (or `uninstall.sh` with `-Uninstall`).
 
 **Linux containers (Docker/CI):** Works as root without sudo. The installer detects the environment automatically.
 
@@ -95,16 +83,9 @@ When Claude Code lifecycle guardrails are enabled, the SessionStart hook bounds 
 
 ### Codex
 
-Codex loads personal skills from `~/.agents/skills` ([Codex skills docs](https://developers.openai.com/codex/skills)). Both installers put the skills tagged `augment_menu: true` there.
-
-```bash
-git clone https://github.com/bordenet/superpowers-plus.git ~/.codex/superpowers-plus
-cd ~/.codex/superpowers-plus
-bash install.sh                                          # macOS / Linux / WSL
-powershell -ExecutionPolicy Bypass -File .\install.ps1   # Windows, from PowerShell
+```text
+Fetch and follow instructions from https://raw.githubusercontent.com/bordenet/superpowers-plus/main/.codex/INSTALL.md
 ```
-
-Restart Codex, then run `/skills` or type `$` and a skill name (for example `$systematic-debugging`). Update with `git pull` and a re-run; remove with `bash install.sh --uninstall` or `powershell -ExecutionPolicy Bypass -File .\install.ps1 -Uninstall`.
 
 ### OpenCode
 
