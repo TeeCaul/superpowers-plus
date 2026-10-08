@@ -169,7 +169,13 @@ function Get-WingetPath {
     }
     # Elevated: the user PATH (where the winget alias lives) is not trusted, so
     # use the App Installer package, which sits in admin-owned Program Files.
-    $pkg = Get-AppxPackage -Name Microsoft.DesktopAppInstaller -ErrorAction SilentlyContinue | Select-Object -First 1
+    # Pin the publisher (family name) and require the package to live under
+    # Program Files\WindowsApps, so a per-user loose-registered package of the
+    # same name cannot be selected.
+    $pkg = Get-AppxPackage -Name Microsoft.DesktopAppInstaller -ErrorAction SilentlyContinue |
+        Where-Object { $_.PackageFamilyName -eq 'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe' -and $env:ProgramFiles -and
+            "$($_.InstallLocation)".StartsWith((Join-Path $env:ProgramFiles 'WindowsApps') + '\', [StringComparison]::OrdinalIgnoreCase) } |
+        Select-Object -First 1
     if ($pkg -and $pkg.InstallLocation) {
         $w = Join-Path $pkg.InstallLocation 'winget.exe'
         if (Test-Path -LiteralPath $w -PathType Leaf) { return $w }
@@ -239,7 +245,7 @@ function Find-GitBash {
 
 # Minimum versions the installer documents: Python 3.8+, Node.js 18+.
 function Test-PythonExe([string]$Exe) {
-    $r = Invoke-NativeQuiet $Exe @('-c', 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)')
+    $r = Invoke-NativeQuiet $Exe @('-I', '-c', 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)')
     return ($r.Code -eq 0)
 }
 
@@ -254,7 +260,7 @@ function Test-NodeOk {
 function Find-Python {
     $py = Get-Command py.exe -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($py -and (Test-TrustedWhenElevated $py.Source)) {
-        $r = Invoke-NativeQuiet $py.Source @('-3', '-c', 'import sys; print(sys.executable)')
+        $r = Invoke-NativeQuiet $py.Source @('-3', '-I', '-c', 'import sys; print(sys.executable)')
         $exe = "$($r.Output -split "`n" | Select-Object -First 1)".Trim()
         # py.exe also lists per-user installs, so re-check the path it returns.
         if ($r.Code -eq 0 -and $exe -and (Test-TrustedWhenElevated $exe) -and (Test-Path -LiteralPath $exe -PathType Leaf) -and (Test-PythonExe $exe)) { return $exe }
