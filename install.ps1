@@ -115,10 +115,11 @@ function Stop-Bootstrap([string]$Message) {
 function Update-SessionPath {
     $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
     $user = [Environment]::GetEnvironmentVariable('Path', 'User')
-    # Elevated runs execute tools found on PATH as administrator; the user PATH
-    # is user-writable, so leave it out.
-    if (Test-Elevated) { $user = '' }
     $current = @($env:Path.Split(';') | Where-Object { $_ })
+    # Elevated runs execute tools found on PATH as administrator. The user PATH
+    # is user-writable and an elevated shell inherits it in $env:Path, so rebuild
+    # the session PATH from the machine PATH only.
+    if (Test-Elevated) { $user = ''; $current = @() }
     $merged = New-Object System.Collections.Generic.List[string]
     foreach ($p in $current + @("$machine;$user".Split(';'))) {
         if (-not $p) { continue }
@@ -233,7 +234,8 @@ function Find-Python {
     foreach ($c in @(Get-Command python.exe -All -ErrorAction SilentlyContinue)) {
         if (($c.Source -notmatch '\\WindowsApps\\') -and (Test-PythonExe $c.Source)) { return $c.Source }
     }
-    if ($env:LOCALAPPDATA) {
+    # %LOCALAPPDATA% is user-writable; do not run a Python from it as administrator.
+    if ($env:LOCALAPPDATA -and -not (Test-Elevated)) {
         $found = Get-ChildItem -Path (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python3*\python.exe') -ErrorAction SilentlyContinue |
             Sort-Object FullName -Descending | Where-Object { Test-PythonExe $_.FullName } | Select-Object -First 1
         if ($found) { return $found.FullName }
