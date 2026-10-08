@@ -263,11 +263,13 @@ function Test-NodeOk {
 # Real python.exe 3.8+, skipping the Microsoft Store stubs in WindowsApps.
 function Find-Python {
     $py = Get-Command py.exe -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($py -and (Test-TrustedWhenElevated $py.Source)) {
+    # Not when elevated: py.exe launches an interpreter chosen from HKCU, py.ini
+    # and PY_PYTHON*, so that interpreter would run as administrator before any
+    # path check. The python.exe loop below is allow-listed first.
+    if ($py -and -not (Test-Elevated)) {
         $r = Invoke-NativeQuiet $py.Source @('-3', '-I', '-c', 'import sys; print(sys.executable)')
         $exe = "$($r.Output -split "`n" | Select-Object -First 1)".Trim()
-        # py.exe also lists per-user installs, so re-check the path it returns.
-        if ($r.Code -eq 0 -and $exe -and (Test-TrustedWhenElevated $exe) -and (Test-Path -LiteralPath $exe -PathType Leaf) -and (Test-PythonExe $exe)) { return $exe }
+        if ($r.Code -eq 0 -and $exe -and (Test-Path -LiteralPath $exe -PathType Leaf) -and (Test-PythonExe $exe)) { return $exe }
     }
     foreach ($c in @(Get-Command python.exe -All -ErrorAction SilentlyContinue)) {
         if (($c.Source -notmatch '\\WindowsApps\\') -and (Test-TrustedWhenElevated $c.Source) -and (Test-PythonExe $c.Source)) { return $c.Source }
@@ -391,6 +393,13 @@ $binDir = Join-Path $HOME '.local\bin'
 # Git Bash derives HOME from HOMEDRIVE/HOMEPATH, which can point at a
 # network share; the AI tools read skills from USERPROFILE.
 if (-not $env:HOME) { $env:HOME = $env:USERPROFILE }
+# Elevated: HKCU-defined variables are inherited and can inject code into the
+# bash, node and python started below (BASH_ENV, NODE_OPTIONS, PYTHON*).
+if (Test-Elevated) {
+    foreach ($v in @('BASH_ENV', 'ENV', 'NODE_OPTIONS', 'PYTHONSTARTUP', 'PYTHONPATH', 'PYTHONHOME', 'PYTHONUSERBASE')) {
+        Remove-Item -Path "Env:$v" -ErrorAction SilentlyContinue
+    }
+}
 Update-SessionPath
 $bashArgs = New-Object System.Collections.Generic.List[string]
 if ($Uninstall) {
