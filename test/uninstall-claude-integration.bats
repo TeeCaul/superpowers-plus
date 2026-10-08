@@ -219,3 +219,23 @@ PY
     [ "$status" -eq 0 ]
     [ "$(settings_count 'sum(c.startswith(("/user/own/","echo ")) for c in cmds)')" = 5 ]
 }
+
+# check_foreign_ecosystem: the SUPERPOWERS_ALLOW_FOREIGN_ECOSYSTEM=1 bypass
+# (used by install.ps1 -Force) must pass a foreign lock, and only that value.
+_foreign_check() {
+    bash -c 'source "$1/lib/install/logging.sh"; source "$1/lib/install/deploy.sh"; check_foreign_ecosystem' _ "$REPO_ROOT"
+}
+
+@test "check_foreign_ecosystem: refuses a foreign lock by default" {
+    echo other-ecosystem > "$HOME/.codex/.superpowers-ecosystem"
+    run env -u SUPERPOWERS_ALLOW_FOREIGN_ECOSYSTEM -u FORCE bash -c "$(declare -f _foreign_check); REPO_ROOT='$REPO_ROOT' _foreign_check"
+    [ "$status" -ne 0 ]
+}
+
+@test "check_foreign_ecosystem: SUPERPOWERS_ALLOW_FOREIGN_ECOSYSTEM=1 bypasses, other values do not" {
+    echo other-ecosystem > "$HOME/.codex/.superpowers-ecosystem"
+    run env SUPERPOWERS_ALLOW_FOREIGN_ECOSYSTEM=1 bash -c "$(declare -f _foreign_check); REPO_ROOT='$REPO_ROOT' _foreign_check"
+    [ "$status" -eq 0 ]
+    run env SUPERPOWERS_ALLOW_FOREIGN_ECOSYSTEM=yes bash -c "$(declare -f _foreign_check); REPO_ROOT='$REPO_ROOT' _foreign_check"
+    [ "$status" -ne 0 ]
+}

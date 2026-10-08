@@ -254,14 +254,20 @@ jobs:
           lock="$HOME/.codex/.superpowers-ecosystem"
           echo other-ecosystem > "$lock"
           sentinel="$HOME/.codex/superpowers-plus/ci-untracked-sentinel"
-          [ -d "$(dirname "$sentinel")" ] && touch "$sentinel"
+          # Make the managed dir a real checkout so a stray git clean -fd
+          # would actually delete the untracked sentinel.
+          managed="$(dirname "$sentinel")"
+          mkdir -p "$managed"
+          git -C "$managed" init -q
+          git -C "$managed" commit -q --allow-empty -m init
+          touch "$sentinel"
           if powershell -NoProfile -ExecutionPolicy Bypass -File ./install.ps1 -NoPrereqInstall; then
             echo "install.ps1 should refuse a foreign ecosystem without -Force"; exit 1
           fi
           powershell -NoProfile -ExecutionPolicy Bypass -File ./install.ps1 -NoPrereqInstall -Force
           [ "$(head -n1 "$lock" | tr -d '\r')" = "superpowers-plus" ]
           # -Force must not run git clean -fd in the managed checkout.
-          if [ -d "$(dirname "$sentinel")" ]; then test -e "$sentinel"; fi
+          test -e "$sentinel"
 
       # Advisory until the suite is ported to Git Bash; failures are reported, not blocking.
       - name: Bats under Git Bash (advisory)
